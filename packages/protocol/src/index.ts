@@ -51,10 +51,19 @@ export interface ImageRef {
   name?: string;
 }
 
+/** A file the user attached: stored on the server, the agent gets its path. */
+export interface AttachedFile {
+  path: string;
+  name: string;
+  size: number;
+  mediaType?: string;
+}
+
 export interface UserItem extends BaseItem {
   kind: 'user';
   text: string;
   images?: ImageRef[];
+  files?: AttachedFile[];
   /** Sent while the agent was busy; waits in the CLI queue. */
   queued?: boolean;
 }
@@ -282,6 +291,8 @@ export interface PrefsState extends Prefs {
 export interface SendPayload {
   text: string;
   images?: { mediaType: string; data: string; name?: string }[];
+  /** Uploaded beforehand via POST /api/upload. */
+  files?: AttachedFile[];
 }
 
 export type ClientMessage =

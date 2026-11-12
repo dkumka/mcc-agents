@@ -10,6 +10,7 @@ import {
   ClipboardListIcon,
   FilePenLineIcon,
   FilePlusIcon,
+  FileIcon,
   FileTextIcon,
   GlobeIcon,
   ListTodoIcon,
@@ -84,7 +85,18 @@ export const UserBubble = memo(function UserBubble({ item }: { item: UserItem })
             )}
           </div>
         ) : null}
-        <div className="whitespace-pre-wrap break-anywhere">{item.text}</div>
+        {item.files?.length ? (
+          <div className={cn('flex flex-wrap gap-1.5', item.text && 'mb-2')}>
+            {item.files.map((f, i) => (
+              <span key={i} className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs" title={f.path}>
+                <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{f.name}</span>
+                {f.size ? <span className="shrink-0 text-muted-foreground">{f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} МБ` : `${Math.max(1, Math.round(f.size / 1024))} КБ`}</span> : null}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {item.text && <div className="whitespace-pre-wrap break-anywhere">{item.text}</div>}
       </div>
     </div>
   );

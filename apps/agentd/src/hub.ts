@@ -23,6 +23,7 @@ import { logger } from './log.ts';
 import { store } from './store.ts';
 import { TelegramBridge } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
+import { pruneUploads, textWithFiles } from './uploads.ts';
 
 const log = logger('hub');
 
@@ -303,6 +304,7 @@ export class Hub implements ChatSink {
       images: m.images?.length
         ? m.images.map((i) => ({ mediaType: i.mediaType, name: i.name, dataUrl: i.data.length < 600_000 ? `data:${i.mediaType};base64,${i.data}` : undefined }))
         : undefined,
+      files: m.files?.length ? m.files : undefined,
     };
   }
 
@@ -358,7 +360,7 @@ export class Hub implements ChatSink {
         const uuid = randomUUID();
         chat.upsert(this.userItem(uuid, msg.message));
         try {
-          await adapter.send(chat, msg.message, uuid, true);
+          await adapter.send(chat, { ...msg.message, text: textWithFiles(msg.message), files: undefined }, uuid, true);
         } catch (e) {
           chat.notice('error', (e as Error).message);
           chat.setStatus('error');
@@ -372,7 +374,7 @@ export class Hub implements ChatSink {
         chat.upsert(this.userItem(uuid, msg.message));
         this.seen(chat.id);
         try {
-          await this.adapters[chat.agent].send(chat, msg.message, uuid, false);
+          await this.adapters[chat.agent].send(chat, { ...msg.message, text: textWithFiles(msg.message), files: undefined }, uuid, false);
         } catch (e) {
           chat.notice('error', (e as Error).message);
           if (chat.summary.status === 'starting' || chat.summary.status === 'running') chat.setStatus('idle');
@@ -441,6 +443,7 @@ export class Hub implements ChatSink {
   /** Free memory of chats nobody looks at; let idle Codex threads go. */
   sweep() {
     const now = Date.now();
+    if (now % 3_600_000 < 60_000) pruneUploads();
     for (const chat of this.chats.values()) {
       if (!chat.loaded) continue;
       let watched = false;

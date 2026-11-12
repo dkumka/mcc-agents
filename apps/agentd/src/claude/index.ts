@@ -21,6 +21,7 @@ import { store } from '../store.ts';
 import { classifyClaudeTool } from '../tools.ts';
 import { ClaudeNormalizer } from './normalize.ts';
 import { loadClaudeHistory, scanClaudeSessions, sessionFile } from './sessions.ts';
+import { UPLOADS_DIR } from '../uploads.ts';
 
 const log = logger('claude');
 type Json = Record<string, any>;
@@ -121,6 +122,9 @@ class ClaudeProc {
       '--permission-prompt-tool',
       'stdio',
       '--allow-dangerously-skip-permissions',
+      // attached files live outside the project
+      '--add-dir',
+      UPLOADS_DIR,
       ...(resume ? ['--resume', chat.nativeId] : ['--session-id', chat.nativeId]),
     ];
     if (settings.model && settings.model !== 'default') args.push('--model', settings.model);

@@ -7,6 +7,7 @@ import { config } from './config.ts';
 import { HttpError, gitStatus, listDir, readFile, searchFiles, tailFile } from './fsapi.ts';
 import type { Client, Hub } from './hub.ts';
 import { logger } from './log.ts';
+import { handleUpload } from './uploads.ts';
 
 const log = logger('server');
 let clientSeq = 0;
@@ -153,6 +154,7 @@ export function startServer(hub: Hub) {
   const make = (local: boolean) => {
     const srv = http.createServer((req, res) => {
       const u = req.url ?? '/';
+      if (u.startsWith('/api/upload') && req.method === 'POST') return handleUpload(req, res);
       if (u.startsWith('/api/')) return void api(hub, req, res);
       if (local) return proxyHttp(req, res);
       res.writeHead(404).end();

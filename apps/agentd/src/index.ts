@@ -1,13 +1,16 @@
+import fs from 'node:fs';
 import { ClaudeAdapter } from './claude/index.ts';
 import { CodexAdapter } from './codex/index.ts';
 import { Hub } from './hub.ts';
 import { logger } from './log.ts';
 import { startServer } from './server.ts';
 import { flushStore, loadStore } from './store.ts';
+import { UPLOADS_DIR } from './uploads.ts';
 
 const log = logger('agentd');
 
 loadStore();
+fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
 const hub = new Hub();
 const claude = new ClaudeAdapter(hub);
 const codex = new CodexAdapter(hub);

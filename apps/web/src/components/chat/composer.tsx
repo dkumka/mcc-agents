@@ -1,15 +1,25 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, CpuIcon, FileIcon, ImagePlusIcon, ShieldIcon, SlashIcon, SquareIcon, XIcon } from 'lucide-react';
-import type { AgentCapabilities, ChatSettings, SendPayload } from '@mcc-agents/protocol';
+import { ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, CpuIcon, FileIcon, Loader2Icon, PaperclipIcon, ShieldIcon, SlashIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import type { AgentCapabilities, AttachedFile, ChatSettings, SendPayload } from '@mcc-agents/protocol';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { api } from '@/lib/api';
+import { api, uploadFile } from '@/lib/api';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
 type Img = { mediaType: string; data: string; name: string; preview: string };
+type Attachment = { id: string; name: string; size: number; progress: number; file?: AttachedFile; error?: string; abort?: () => void };
+
+function fmtSize(n: number) {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} МБ`;
+  if (n >= 1024) return `${Math.round(n / 1024)} КБ`;
+  return `${n} Б`;
+}
+
+/** Images the model can look at directly; everything else is uploaded and passed to the agent as a file path. */
+const VISION = /^image\/(png|jpe?g|webp|gif|heic|heif)$/;
 
 /** Downscale big photos (phone camera) before sending: max 2000px, JPEG 0.85. */
 async function prepareImage(file: File): Promise<Img> {
@@ -172,6 +182,7 @@ export function Composer({
 }) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<Img[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [popup, setPopup] = useState<Popup>(null);
   const [sel, setSel] = useState(0);
   const [files, setFiles] = useState<string[]>([]);
@@ -183,6 +194,7 @@ export function Composer({
   useEffect(() => {
     setText(localStorage.getItem(`draft:${draftKey}`) ?? '');
     setImages([]);
+    setAttachments([]);
   }, [draftKey]);
   useEffect(() => {
     const t = setTimeout(() => {
@@ -258,13 +270,20 @@ export function Composer({
 
   useEffect(() => setSel(0), [popup?.kind, popup?.query]);
 
-  const canSend = (text.trim().length > 0 || images.length > 0) && !sending;
+  const uploading = attachments.some((a) => !a.file && !a.error);
+  const ready = attachments.filter((a) => a.file);
+  const canSend = (text.trim().length > 0 || images.length > 0 || ready.length > 0) && !sending && !uploading;
 
   const submit = async () => {
     if (!canSend) return;
-    const payload: SendPayload = { text: text.trim(), images: images.map(({ mediaType, data, name }) => ({ mediaType, data, name })) };
+    const payload: SendPayload = {
+      text: text.trim(),
+      images: images.map(({ mediaType, data, name }) => ({ mediaType, data, name })),
+      files: ready.map((a) => a.file!),
+    };
     setText('');
     setImages([]);
+    setAttachments([]);
     setPopup(null);
     localStorage.removeItem(`draft:${draftKey}`);
     try {
@@ -274,14 +293,22 @@ export function Composer({
     }
   };
 
+  const upload = (f: File) => {
+    const id = Math.random().toString(36).slice(2);
+    const { promise, abort } = uploadFile(f, (p) => setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, progress: p } : a))));
+    setAttachments((cur) => [...cur, { id, name: f.name || 'file', size: f.size, progress: 0, abort }]);
+    promise
+      .then((file) => setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, file, progress: 1 } : a))))
+      .catch((e: Error) => setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, error: e.message } : a))));
+  };
+
   const addFiles = async (list: FileList | File[]) => {
-    const imgs = await Promise.all(
-      [...list]
-        .filter((f) => f.type.startsWith('image/'))
-        .slice(0, 6)
-        .map(prepareImage),
-    );
-    setImages((cur) => [...cur, ...imgs].slice(0, 8));
+    const all = [...list];
+    const pics = all.filter((f) => VISION.test(f.type) && f.size < 20 * 1024 * 1024).slice(0, 6);
+    for (const f of all) if (!pics.includes(f)) upload(f);
+    if (!pics.length) return;
+    const imgs = await Promise.all(pics.map((f) => prepareImage(f).catch(() => (upload(f), null))));
+    setImages((cur) => [...cur, ...imgs.filter((x): x is Img => !!x)].slice(0, 8));
   };
 
   return (
@@ -316,6 +343,43 @@ export function Composer({
           if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         }}
       >
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
+            {attachments.map((a) => (
+              <div
+                key={a.id}
+                className={cn('relative flex max-w-full items-center gap-2 overflow-hidden rounded-lg border bg-muted/40 py-1.5 pl-2 pr-7 text-xs', a.error && 'border-destructive/50')}
+                title={a.error ?? a.name}
+              >
+                {a.error ? (
+                  <TriangleAlertIcon className="size-4 shrink-0 text-destructive" />
+                ) : a.file ? (
+                  <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground" />
+                )}
+                <span className="min-w-0">
+                  <span className="block max-w-[11rem] truncate font-medium">{a.name}</span>
+                  <span className={cn('block text-[10.5px]', a.error ? 'text-destructive' : 'text-muted-foreground')}>
+                    {a.error ?? (a.file ? fmtSize(a.size) : `${Math.round(a.progress * 100)}% · ${fmtSize(a.size)}`)}
+                  </span>
+                </span>
+                {!a.file && !a.error && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary/70" style={{ width: `${Math.round(a.progress * 100)}%` }} />}
+                <button
+                  type="button"
+                  aria-label="Убрать"
+                  onClick={() => {
+                    a.abort?.();
+                    setAttachments((cur) => cur.filter((x) => x.id !== a.id));
+                  }}
+                  className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {images.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-3 pt-3">
             {images.map((im, i) => (
@@ -378,7 +442,7 @@ export function Composer({
           }}
           onPaste={(e) => {
             const fl = [...e.clipboardData.files];
-            if (fl.some((f) => f.type.startsWith('image/'))) {
+            if (fl.length) {
               e.preventDefault();
               addFiles(fl);
             }
@@ -387,13 +451,12 @@ export function Composer({
           className="block max-h-[40vh] min-h-[44px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-base leading-relaxed outline-none placeholder:text-muted-foreground md:text-sm"
         />
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
-          <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => fileInput.current?.click()} aria-label="Прикрепить изображение">
-            <ImagePlusIcon className="size-4" />
+          <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => fileInput.current?.click()} aria-label="Прикрепить файлы" title="Прикрепить файлы (до 50 МБ)">
+            <PaperclipIcon className="size-4" />
           </Button>
           <input
             ref={fileInput}
             type="file"
-            accept="image/*"
             multiple
             hidden
             onChange={(e) => {

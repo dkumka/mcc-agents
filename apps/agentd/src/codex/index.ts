@@ -22,6 +22,7 @@ import { logger } from '../log.ts';
 import { store } from '../store.ts';
 import { unwrapShell } from '../tools.ts';
 import { AppServer } from './rpc.ts';
+import { splitFiles } from '../uploads.ts';
 
 const log = logger('codex');
 type Json = Record<string, any>;
@@ -81,8 +82,9 @@ export function codexItem(it: Json): ChatItem | null {
   const ts = it.startedAtMs ?? undefined;
   switch (it.type) {
     case 'userMessage': {
-      const { text, images } = textOfUser(it.content);
-      return { kind: 'user', id: it.clientId ?? it.id, ts, text, images: images.length ? images : undefined };
+      const { text: raw, images } = textOfUser(it.content);
+      const { text, files } = splitFiles(raw);
+      return { kind: 'user', id: it.clientId ?? it.id, ts, text, images: images.length ? images : undefined, files: files.length ? files : undefined };
     }
     case 'agentMessage':
       return { kind: 'assistant', id: it.id, ts, text: it.text ?? '' };

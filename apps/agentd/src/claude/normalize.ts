@@ -1,6 +1,7 @@
 import type { ChatItem, ImageRef, TodoEntry, ToolItem, ToolStatus } from '@mcc-agents/protocol';
 import type { Chat } from '../chat.ts';
 import { classifyClaudeTool, patchToUnified } from '../tools.ts';
+import { splitFiles } from '../uploads.ts';
 
 type Json = Record<string, any>;
 
@@ -184,9 +185,10 @@ export class ClaudeNormalizer {
       return;
     }
     const bash = tagValue(raw, 'bash-input');
-    const text = bash !== undefined ? `! ${bash}` : stripReminders(raw);
-    if (!text && !images.length) return;
-    this.put({ kind: 'user', id, ts, text, images: images.length ? images : undefined });
+    const split = splitFiles(bash !== undefined ? `! ${bash}` : stripReminders(raw));
+    const text = split.text;
+    if (!text && !images.length && !split.files.length) return;
+    this.put({ kind: 'user', id, ts, text, images: images.length ? images : undefined, files: split.files.length ? split.files : undefined });
   }
 
   private toolResult(b: Json, extra: unknown) {

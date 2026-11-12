@@ -65,6 +65,19 @@
 - `clientUserMessageId` = наш id сообщения → своё сообщение не дублируется.
 - `/compact` → `thread/compact/start`. Картинки → `uploads/<uuid>.<ext>` → `localImage`.
 
+## Вложения (любые файлы)
+
+- Поле ввода: скрепка, вставка, перетаскивание. Картинки (png/jpeg/webp/gif/heic, до 20 МБ) идут модели как изображения
+  (уменьшаются до 2000 px); всё остальное — `POST /api/upload` (сырое тело, имя в `X-File-Name`, до 50 МБ, проверка Origin),
+  с прогрессом (`lib/api.ts → uploadFile`).
+- Файлы лежат в `~/.local/share/mcc-agents/uploads/<дата>/<id>-<имя>` (не в проекте — git чистый), хранятся 30 дней.
+  Claude запускается с `--add-dir` на эту папку; Codex работает без песочницы.
+- Агенту файлы передаются текстом: к сообщению дописывается блок `<attached_files>` с путями (`uploads.ts → textWithFiles`) —
+  модель читает файлы сама (`.docx/.xlsx/.pdf` — своими инструментами). При загрузке истории блок вырезается обратно в
+  `UserItem.files` (`splitFiles`), в чате это плашки с именем и размером. В `textWithFiles` пропускаются только пути внутри
+  папки загрузок.
+- Проверка: `node scripts/files-test.mjs /run/mcc-agents/local.sock claude|codex <файл>`.
+
 ## Протокол (`packages/protocol`)
 
 Всё, что видит интерфейс, — `ChatItem`: `user`, `assistant`, `thinking`, `tool` (категория, заголовок, ввод, вывод,
@@ -74,7 +87,7 @@
 WebSocket `/ws`: клиент → `subscribe/unsubscribe/visible/create/send/interrupt/decide/settings/stopTask/meta/seen/release`;
 сервер → `chats/chat/chatRemoved/limits/snapshot/item/delta/state/created/error`.
 
-HTTP `/api`: `health`, `projects`, `caps?agent&cwd`, `files?cwd&q`, `ls?path`, `file?path`, `git?cwd`,
+HTTP `/api`: `POST upload` (вложения), `health`, `projects`, `caps?agent&cwd`, `files?cwd&q`, `ls?path`, `file?path`, `git?cwd`,
 `output?chatId&itemId` (полный вывод усечённого инструмента), `task-output?chatId&taskId`. Пути — только внутри `$HOME` и `/tmp`.
 
 ## Веб (`apps/web/src`)
