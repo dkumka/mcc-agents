@@ -60,7 +60,7 @@ function ModeSwitch({ mode }: { mode: ChatMode }) {
     { m: 'code', label: 'Код', icon: CodeXmlIcon },
   ];
   return (
-    <div role="tablist" aria-label="Режим" className="grid grid-cols-2 gap-0.5 rounded-lg bg-sidebar-accent p-0.5">
+    <div role="tablist" aria-label="Режим" className="grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-[3px]">
       {items.map(({ m, label, icon: Icon }) => (
         <button
           key={m}
@@ -71,7 +71,9 @@ function ModeSwitch({ mode }: { mode: ChatMode }) {
           className={cn(
             'flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors',
             isMobile ? 'h-9' : 'h-8',
-            mode === m ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/5' : 'text-muted-foreground hover:text-foreground',
+            mode === m
+              ? 'bg-background text-foreground shadow-sm dark:border dark:border-input dark:bg-input/30'
+              : 'text-foreground/60 hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground',
           )}
         >
           <Icon className="size-4" /> {label}
