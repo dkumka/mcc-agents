@@ -1,8 +1,8 @@
 # mcc agents: https://agents.mcc.babochkin.com
 #   /api/*, /ws -> unix:/run/mcc-agents/agentd.sock (mcc-agentd.service)
 #   остальное   -> 127.0.0.1:3110 (mcc-agents-web.service, Next.js)
-# Вход — тот же логин и пароль, что у code.mcc / ssh.mcc / домашней страницы (/etc/nginx/code.htpasswd).
-# Иконки и manifest — без пароля (iOS «На экран Домой» берёт их без авторизации).
+# Вход — формой mcc-auth (https://auth.mcc.babochkin.com), тот же логин и пароль, что раньше (/etc/nginx/code.htpasswd).
+# Иконки и manifest — без входа (iOS «На экран Домой» берёт их без cookie).
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
@@ -15,8 +15,8 @@ server {
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Robots-Tag "noindex, nofollow" always;
 
-    auth_basic "mcc";
-    auth_basic_user_file /etc/nginx/code.htpasswd;
+    # Вход — формой на https://auth.mcc.babochkin.com (mcc-auth, общий для сайтов mcc; до 2026-11-12 был basic auth)
+    include snippets/mcc-auth.conf;
 
     client_max_body_size 60m;
 
@@ -41,7 +41,7 @@ server {
     }
 
     location ~ ^/(manifest\.webmanifest|icon|apple-icon|favicon\.ico)$ {
-        auth_basic off;
+        auth_request off;
         proxy_pass http://127.0.0.1:3110;
         proxy_set_header Host $host;
     }

@@ -1,9 +1,11 @@
+import { toLogin } from '@/lib/auth';
 import type { AgentCapabilities, AgentKind, DirEntry, GitStatus, ProjectInfo } from '@mcc-agents/protocol';
 
 async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, v);
   const r = await fetch(`/api/${path}${q.size ? `?${q}` : ''}`, { cache: 'no-store' });
+  if (r.status === 401) toLogin();
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
   return body as T;

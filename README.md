@@ -1,7 +1,8 @@
 # mcc agents
 
 Личная веб-оболочка над официальными CLI **Claude Code** (`claude`) и **Codex** (`codex`) на сервере разработки `mcc`.
-Адрес: **https://agents.mcc.babochkin.com** (вход — тот же логин и пароль, что у `code.mcc`).
+Адрес: **https://agents.mcc.babochkin.com**. Вход — общей формой https://auth.mcc.babochkin.com (сервис `mcc-auth` из репозитория
+`mcc-server`, cookie на все `*.mcc.babochkin.com`; логин и пароль — прежние, `/etc/nginx/code.htpasswd`).
 
 - Без SDK: запускаются сами CLI в их штатных режимах — `claude -p` (stream-json + control-протокол) и `codex app-server` (JSON-RPC).
   Вход — собственный OAuth каждого CLI (`claude` / `codex login --device-auth` по SSH), токены оболочка не трогает.
@@ -36,7 +37,7 @@ ssh serzhb@94.131.82.220 '~/dev/mcc-agents/scripts/deploy.sh --local'   # соб
 `npm install` при смене зависимостей, `next build`, перезапуск веба; демон — только если менялись `apps/agentd` или
 `packages/protocol`, и не при занятых чатах — иначе `--force`).
 
-Тест без пароля nginx (например, из iOS Simulator на Mac): `ssh -N -L 3119:/run/mcc-agents/local.sock serzhb@94.131.82.220`
+Тест без входа (например, из iOS Simulator на Mac): `ssh -N -L 3119:/run/mcc-agents/local.sock serzhb@94.131.82.220`
 → http://localhost:3119. Сокет `local.sock` доступен только пользователю `serzhb`.
 
 Сквозной тест протокола (на сервере, тратит немного лимита): `node scripts/e2e.mjs /run/mcc-agents/local.sock claude /tmp/agent-spike/proj haiku`.
@@ -48,7 +49,8 @@ ssh serzhb@94.131.82.220 '~/dev/mcc-agents/scripts/deploy.sh --local'   # соб
 | `mcc-agentd.service` | демон; сокеты `/run/mcc-agents/agentd.sock` (nginx), `local.sock` (туннель) |
 | `mcc-agents-web.service` | Next.js, `127.0.0.1:3110` |
 | nginx | `/etc/nginx/sites-available/agents.mcc.babochkin.com` |
-| данные оболочки | `~/.local/share/mcc-agents/state.json` (закрепления, названия, настройки чатов, лимиты), `uploads/` |
+| данные оболочки | `~/.local/share/mcc-agents/state.json` (закрепления, названия, настройки чатов, лимиты, настройки Telegram, отправленные сообщения), `uploads/` |
+| бот Telegram агентов | `~/secrets/agents-telegram.env` (`secret-set agents-telegram TELEGRAM_BOT_TOKEN`; чат — из `telegram.env`) |
 | логи | `journalctl -u mcc-agentd -u mcc-agents-web` |
 
 Подробно — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), текущее состояние — [docs/STATUS.md](docs/STATUS.md).

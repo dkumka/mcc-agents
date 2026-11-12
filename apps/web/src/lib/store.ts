@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { checkAuth } from '@/lib/auth';
 import type {
   AgentKind,
   AgentLimits,
@@ -130,6 +131,7 @@ class Store {
     ws.onclose = () => {
       this.ws = null;
       this.set({ connected: false });
+      if (this.retry >= 2000) checkAuth();
       setTimeout(() => this.connect(), this.retry);
       this.retry = Math.min(this.retry * 2, 8000);
     };

@@ -28,14 +28,16 @@ fi
 OLD=$(git rev-parse -q --verify HEAD || true)
 if [[ $LOCAL == 0 ]]; then
   git fetch -q origin
-  # рабочая копия могла прийти через rsync (scripts/sync.sh): если она совпадает с origin/main — просто переключаемся
-  if git diff --quiet origin/main -- . ; then
+  # рабочая копия могла прийти через rsync (scripts/sync.sh): если файлы совпадают с origin/main (включая ещё
+  # не отслеживаемые git новые файлы) — просто переключаемся; сравниваем через временный индекс с деревом origin/main
+  tmpidx=$(mktemp); trap 'rm -f "$tmpidx"' EXIT
+  GIT_INDEX_FILE=$tmpidx git read-tree origin/main
+  GIT_INDEX_FILE=$tmpidx git update-index -q --refresh >/dev/null 2>&1 || true
+  if GIT_INDEX_FILE=$tmpidx git diff-files --quiet; then
     git reset -q --hard origin/main
-  elif git diff --quiet HEAD -- . ; then
-    git merge -q --ff-only origin/main
   else
     echo "В ~/dev/mcc-agents есть изменения, которых нет в origin/main. Закоммитьте их или запустите с --local." >&2
-    git status --short | head -20 >&2
+    GIT_INDEX_FILE=$tmpidx git diff-files --name-only | head -20 >&2
     exit 1
   fi
 fi
