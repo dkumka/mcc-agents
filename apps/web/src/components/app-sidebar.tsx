@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useTheme } from 'next-themes';
-import { ChevronRightIcon, MonitorIcon, MoonIcon, PinIcon, PlusIcon, SearchIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ChevronRightIcon, MoonIcon, PinIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import type { ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
+import { ResizeHandle } from '@/components/resize-handle';
+import { SettingsDialog } from '@/components/settings-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Sidebar,
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/sidebar';
 import { baseName, shortPath, timeAgo } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
+import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
 function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPick: () => void }) {
@@ -39,12 +41,11 @@ function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPic
 }
 
 function ThemeSwitch() {
-  const { theme, setTheme } = useTheme();
-  const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
-  const Icon = theme === 'light' ? SunIcon : theme === 'dark' ? MoonIcon : MonitorIcon;
+  const [theme, setTheme] = useTheme();
+  const dark = theme === 'dark';
   return (
-    <Button variant="ghost" size="icon" className="size-8" onClick={() => setTheme(next)} aria-label="Тема">
-      <Icon className="size-4" />
+    <Button variant="ghost" size="icon" className="size-8" onClick={() => setTheme(dark ? 'light' : 'dark')} aria-label={dark ? 'Светлая тема' : 'Тёмная тема'} title={dark ? 'Светлая тема' : 'Тёмная тема'}>
+      {dark ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
     </Button>
   );
 }
@@ -59,6 +60,7 @@ export function AppSidebar() {
   const [q, setQ] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [settings, setSettings] = useState(false);
   const activeId = route.kind === 'chat' ? route.chatId : null;
 
   const { pinned, groups } = useMemo(() => {
@@ -174,8 +176,13 @@ export function AppSidebar() {
             mcc.babochkin.com
           </a>
           <ThemeSwitch />
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => setSettings(true)} aria-label="Настройки" title="Настройки">
+            <SettingsIcon className="size-4" />
+          </Button>
         </div>
       </SidebarFooter>
+      <ResizeHandle side="right" cssVar="--sidebar-w" cookie="mcc_sidebar_w" min={220} max={() => 480} />
+      <SettingsDialog open={settings} onOpenChange={setSettings} />
     </Sidebar>
   );
 }

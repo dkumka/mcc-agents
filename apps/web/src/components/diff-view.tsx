@@ -16,7 +16,7 @@ export function DiffStat({ add, del, className }: { add: number; del: number; cl
   );
 }
 
-export function DiffLines({ lines, maxHeight = 'max-h-96' }: { lines: DiffLine[]; maxHeight?: string }) {
+export function DiffLines({ lines, maxHeight = 'max-h-96', wrap = false }: { lines: DiffLine[]; maxHeight?: string; wrap?: boolean }) {
   return (
     <div className={cn('scrollbar-thin overflow-auto font-mono text-[12px] leading-[1.55]', maxHeight)}>
       <table className="w-full border-collapse">
@@ -32,7 +32,7 @@ export function DiffLines({ lines, maxHeight = 'max-h-96' }: { lines: DiffLine[]
               <tr key={i} className={cn(l.type === 'add' && 'bg-diff-add/12', l.type === 'del' && 'bg-diff-del/12')}>
                 <td className="w-0 select-none px-1.5 text-right align-top text-[10.5px] text-muted-foreground/60">{l.oldNo ?? ''}</td>
                 <td className="w-0 select-none px-1.5 text-right align-top text-[10.5px] text-muted-foreground/60">{l.newNo ?? ''}</td>
-                <td className="whitespace-pre pr-3 align-top">
+                <td className={cn('pr-3 align-top', wrap ? 'whitespace-pre-wrap break-anywhere' : 'whitespace-pre')}>
                   <span className={cn('mr-1 select-none', l.type === 'add' ? 'text-diff-add' : l.type === 'del' ? 'text-diff-del' : 'text-transparent')}>
                     {l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '}
                   </span>
@@ -47,7 +47,7 @@ export function DiffLines({ lines, maxHeight = 'max-h-96' }: { lines: DiffLine[]
   );
 }
 
-export function FileDiffView({ diff, cwd, maxHeight }: { diff: FileDiff; cwd?: string; maxHeight?: string }) {
+export function FileDiffView({ diff, cwd, maxHeight, wrap = true }: { diff: FileDiff; cwd?: string; maxHeight?: string; wrap?: boolean }) {
   const lines = useMemo(() => diffLines(diff), [diff]);
   const st = diffStats(lines);
   return (
@@ -60,12 +60,12 @@ export function FileDiffView({ diff, cwd, maxHeight }: { diff: FileDiff; cwd?: s
         </span>
         <DiffStat {...st} />
       </div>
-      <DiffLines lines={lines} maxHeight={maxHeight} />
+      <DiffLines lines={lines} maxHeight={maxHeight} wrap={wrap} />
     </div>
   );
 }
 
-export function UnifiedDiffView({ text, maxHeight }: { text: string; maxHeight?: string }) {
+export function UnifiedDiffView({ text, maxHeight, wrap }: { text: string; maxHeight?: string; wrap?: boolean }) {
   const lines = useMemo(() => parseUnified(text), [text]);
-  return <DiffLines lines={lines} maxHeight={maxHeight} />;
+  return <DiffLines lines={lines} maxHeight={maxHeight} wrap={wrap} />;
 }

@@ -11,6 +11,7 @@ import type {
   ChatSettings,
   ChatSummary,
   ClientMessage,
+  PrefsState,
   ProjectInfo,
   SendPayload,
   ServerMessage,
@@ -20,6 +21,8 @@ import { Chat, type ChatSink } from './chat.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
 import { store } from './store.ts';
+import { TelegramBridge } from './telegram.ts';
+import { TgApprovals } from './tg-approvals.ts';
 
 const log = logger('hub');
 
@@ -58,6 +61,32 @@ export class Hub implements ChatSink {
   private refreshSoon: NodeJS.Timeout | null = null;
   private lastNotify = new Map<string, number>();
   private listErrors: Partial<Record<AgentKind, string>> = {};
+  readonly tg = new TelegramBridge();
+  readonly tga: TgApprovals;
+
+  constructor() {
+    this.tga = new TgApprovals(this.tg, {
+      peek: (id) => this.chats.get(id),
+      decideFrom: (chat, d) => this.adapters[chat.agent].decide(chat, d),
+    });
+  }
+
+  /** Start the Telegram bridge (reads ~/secrets) and tidy messages left from a previous run. */
+  startTelegram() {
+    this.tg.reload();
+    this.tga.markStale().catch(() => {});
+  }
+
+  /** Called periodically: pick up a token added with secret-set without a restart. */
+  tick() {
+    const before = this.tg.ready;
+    this.tg.maybeReload();
+    if (before !== this.tg.ready) this.broadcast({ t: 'prefs', prefs: this.prefsState() });
+  }
+
+  prefsState(): PrefsState {
+    return { ...store.prefs(), telegramReady: this.tg.ready };
+  }
 
   register(a: Adapter) {
     this.adapters[a.agent] = a;
@@ -198,7 +227,13 @@ export class Hub implements ChatSink {
   }
 
   approvalAdded(chat: Chat, a: Approval) {
-    if (!this.visibleTo(chat)) this.notify(chat, `✋ Нужно подтверждение: ${a.title.slice(0, 120)}`);
+    // with the agents' bot: interactive message after the configured delay; without it — the old plain notice
+    if (this.tga.active) this.tga.added(chat, a);
+    else if (!this.visibleTo(chat)) this.notify(chat, `✋ Нужно подтверждение: ${a.title.slice(0, 120)}`);
+  }
+
+  approvalRemoved(chat: Chat, approvalId: string) {
+    this.tga.removed(chat, approvalId);
   }
 
   private notify(chat: Chat, what: string) {
@@ -227,6 +262,7 @@ export class Hub implements ChatSink {
     c.send({ t: 'hello', version: config.version, host: process.env.HOSTNAME ?? 'mcc' });
     c.send({ t: 'chats', chats: this.summaries() });
     c.send({ t: 'limits', limits: store.limits() });
+    c.send({ t: 'prefs', prefs: this.prefsState() });
   }
 
   removeClient(c: Client) {
@@ -348,7 +384,19 @@ export class Hub implements ChatSink {
         return;
       case 'decide': {
         const chat = this.need(msg.chatId);
+        const a = chat.state.approvals.find((x) => x.id === msg.decision.approvalId);
+        this.tga.record(chat.id, msg.decision, 'web', a);
         await this.adapters[chat.agent].decide(chat, msg.decision);
+        return;
+      }
+      case 'prefs': {
+        const p = msg.prefs;
+        if (p.telegramDelaySec !== undefined) {
+          const n = Math.round(Number(p.telegramDelaySec));
+          if (!Number.isFinite(n) || n < 0 || n > 24 * 3600) throw new Error('неверная задержка');
+          store.setPrefs({ telegramDelaySec: n });
+        }
+        this.broadcast({ t: 'prefs', prefs: this.prefsState() });
         return;
       }
       case 'settings': {
@@ -411,6 +459,7 @@ export class Hub implements ChatSink {
   }
 
   shutdown() {
+    this.tg.stop();
     for (const a of Object.values(this.adapters)) a.shutdown();
   }
 }

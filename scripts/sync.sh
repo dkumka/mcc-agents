@@ -11,5 +11,6 @@ EXCLUDES=(--exclude node_modules --exclude .next --exclude .git --exclude '*.tsb
 if [[ "${1:-}" == "--pull" ]]; then
   rsync -az "${EXCLUDES[@]}" "$HOST:$REMOTE/" "$ROOT/"
 else
-  rsync -az "${EXCLUDES[@]}" "$ROOT/" "$HOST:$REMOTE/"
+  # --delete: files removed on the Mac disappear on the server too (excluded paths are kept)
+  rsync -az --delete "${EXCLUDES[@]}" "$ROOT/" "$HOST:$REMOTE/"
 fi

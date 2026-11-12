@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { ChatView } from '@/components/chat/chat-view';
 import { NewChat } from '@/components/chat/new-chat';
 import { SidePanel } from '@/components/panel/side-panel';
+import { ResizeHandle } from '@/components/resize-handle';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { useAppViewport } from '@/hooks/use-app-viewport';
@@ -30,7 +31,8 @@ function Panel() {
     );
   if (!panel) return null;
   return (
-    <aside className="hidden w-[min(44vw,560px)] min-w-[340px] shrink-0 border-l md:block">
+    <aside className="relative hidden w-[var(--panel-w,min(44vw,560px))] min-w-[320px] max-w-[70vw] shrink-0 border-l md:block">
+      <ResizeHandle side="left" cssVar="--panel-w" cookie="mcc_panel_w" min={320} max={() => Math.round(window.innerWidth * 0.7)} />
       <SidePanel tab={panel} state={state} />
     </aside>
   );
@@ -48,7 +50,7 @@ export function App() {
   }, []);
 
   return (
-    <SidebarProvider className="app-h min-h-0 overflow-hidden">
+    <SidebarProvider className="app-h min-h-0 overflow-hidden" style={{ '--sidebar-width': 'var(--sidebar-w, 16rem)' } as React.CSSProperties}>
       <AppSidebar />
       <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
         <div className="flex h-full min-h-0 min-w-0">

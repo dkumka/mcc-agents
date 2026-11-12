@@ -358,3 +358,22 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ------------------------------------------------------------ shiki (dual theme via CSS vars) */
+.shiki-view span {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+}
+.dark .shiki-view span {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+}
+
+/* while a panel is being resized: no transitions, no text selection */
+html[data-resizing] * {
+  transition: none !important;
+  user-select: none !important;
+  cursor: col-resize !important;
+}

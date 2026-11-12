@@ -10,6 +10,8 @@ import type {
   ChatState,
   ChatSummary,
   ClientMessage,
+  Prefs,
+  PrefsState,
   SendPayload,
   ServerMessage,
 } from '@mcc-agents/protocol';
@@ -23,6 +25,7 @@ interface State {
   limits: AgentLimits[];
   states: Record<string, ChatState>;
   route: Route;
+  prefs: PrefsState | null;
 }
 
 type Listener = () => void;
@@ -48,7 +51,7 @@ function urlFor(r: Route): string {
 }
 
 class Store {
-  state: State = { connected: false, everConnected: false, chats: {}, limits: [], states: {}, route: { kind: 'home' } };
+  state: State = { connected: false, everConnected: false, chats: {}, limits: [], states: {}, route: { kind: 'home' }, prefs: null };
   private listeners = new Set<Listener>();
   private ws: WebSocket | null = null;
   private retry = 500;
@@ -176,6 +179,9 @@ class Store {
       }
       case 'limits':
         this.set({ limits: m.limits });
+        return;
+      case 'prefs':
+        this.set({ prefs: m.prefs });
         return;
       case 'snapshot': {
         const map = new Map<string, number>();
@@ -322,6 +328,11 @@ class Store {
 
   stopTask(chatId: string, taskId: string) {
     this.send({ t: 'stopTask', chatId, taskId });
+  }
+
+  setPrefs(p: Partial<Prefs>) {
+    if (this.state.prefs) this.set({ prefs: { ...this.state.prefs, ...p } });
+    this.send({ t: 'prefs', prefs: p });
   }
 
   meta(chatId: string, m: { pinned?: boolean; title?: string }) {

@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeftIcon, ChevronRightIcon, FileIcon, FolderIcon, GitBranchIcon, Loader2Icon, RefreshCwIcon, SquareIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronRightIcon, FileIcon, FolderIcon, GitBranchIcon, Loader2Icon, RefreshCwIcon, SquareIcon, WrapTextIcon, XIcon } from 'lucide-react';
 import type { BgTask, ChatState, DirEntry, GitStatus } from '@mcc-agents/protocol';
+import { CodeView } from '@/components/code-view';
 import { DiffStat, UnifiedDiffView } from '@/components/diff-view';
 import { CopyButton } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
@@ -11,12 +12,12 @@ import { api } from '@/lib/api';
 import { diffStats, parseUnified, splitGitDiff } from '@/lib/diff';
 import { shortPath, timeAgo } from '@/lib/format';
 import { store } from '@/lib/store';
-import { ui, type PanelTab } from '@/lib/ui';
+import { ui, useUi, type PanelTab } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------- git changes
 
-function Changes({ cwd }: { cwd: string }) {
+function Changes({ cwd, wrap }: { cwd: string; wrap: boolean }) {
   const [st, setSt] = useState<GitStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +65,7 @@ function Changes({ cwd }: { cwd: string }) {
               <span className="min-w-0 flex-1 truncate font-mono">{f.path}</span>
               <DiffStat {...s} />
             </button>
-            {isOpen && <UnifiedDiffView text={f.text} maxHeight="max-h-[60vh]" />}
+            {isOpen && <UnifiedDiffView text={f.text} maxHeight="max-h-[60vh]" wrap={wrap} />}
           </div>
         );
       })}
@@ -83,7 +84,7 @@ function Changes({ cwd }: { cwd: string }) {
 
 // ---------------------------------------------------------------- files
 
-function Files({ cwd }: { cwd: string }) {
+function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
   const [dir, setDir] = useState(cwd);
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [file, setFile] = useState<{ path: string; content: string; truncated: boolean; binary: boolean } | null>(null);
@@ -109,10 +110,14 @@ function Files({ cwd }: { cwd: string }) {
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{shortPath(file.path, cwd)}</span>
           <CopyButton text={file.path} label="путь" />
         </div>
-        <pre className="scrollbar-thin min-h-0 flex-1 overflow-auto p-3 font-mono text-[12px] leading-relaxed">
-          {file.binary ? 'Бинарный файл' : file.content}
-          {file.truncated && '\n\n… файл обрезан (больше 1 МБ)'}
-        </pre>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-auto py-2">
+          {file.binary ? (
+            <div className="p-3 text-sm text-muted-foreground">Бинарный файл</div>
+          ) : (
+            <CodeView code={file.content} path={file.path} wrap={wrap} />
+          )}
+          {file.truncated && <div className="p-3 text-xs text-muted-foreground">… файл обрезан (больше 1 МБ)</div>}
+        </div>
       </div>
     );
   const up = dir !== '/' && dir.split('/').length > 2;
@@ -201,6 +206,7 @@ function Tasks({ state }: { state: ChatState }) {
 
 export function SidePanel({ tab, state, onClose }: { tab: PanelTab; state: ChatState; onClose?: () => void }) {
   const cwd = state.summary.cwd;
+  const wrap = useUi((s) => s.wrap);
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="pt-safe flex shrink-0 items-center gap-2 border-b px-2">
@@ -214,14 +220,26 @@ export function SidePanel({ tab, state, onClose }: { tab: PanelTab; state: ChatS
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          {tab !== 'tasks' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('size-9 shrink-0', wrap && 'bg-muted')}
+              onClick={() => ui.toggleWrap()}
+              aria-label="Перенос строк"
+              title={wrap ? 'Перенос строк: вкл' : 'Перенос строк: выкл'}
+            >
+              <WrapTextIcon className="size-4" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="size-9 shrink-0" onClick={onClose ?? (() => ui.set({ panel: null }))} aria-label="Закрыть панель">
             <XIcon className="size-4" />
           </Button>
         </div>
       </div>
       <div className="pb-safe scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-        {tab === 'changes' && <Changes cwd={cwd} />}
-        {tab === 'files' && <Files cwd={cwd} />}
+        {tab === 'changes' && <Changes cwd={cwd} wrap={wrap} />}
+        {tab === 'files' && <Files cwd={cwd} wrap={wrap} />}
         {tab === 'tasks' && <Tasks state={state} />}
       </div>
     </div>

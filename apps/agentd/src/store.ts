@@ -24,17 +24,35 @@ interface StoreData {
   windows: Record<string, number>;
   /** Last settings used for a new chat, per agent. */
   lastSettings: Record<string, ChatSettings>;
+  prefs: Prefs;
+  tgOffset: number;
+  /** Approval messages sent to Telegram: short key → where it points and what was sent. */
+  tgMessages: Record<string, TgMessage>;
+}
+
+export interface Prefs {
+  /** Send a pending approval / question to Telegram after this many seconds without an answer (0 = off). */
+  telegramDelaySec: number;
+}
+
+export interface TgMessage {
+  chatId: string;
+  approvalId: string;
+  messageId: number;
+  html: string;
+  sentAt: number;
 }
 
 const file = path.join(config.dataDir, 'state.json');
-let data: StoreData = { version: 1, meta: {}, limits: {}, windows: {}, lastSettings: {} };
+const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60 };
+let data: StoreData = { version: 1, meta: {}, limits: {}, windows: {}, lastSettings: {}, prefs: { ...DEFAULT_PREFS }, tgOffset: 0, tgMessages: {} };
 let timer: NodeJS.Timeout | null = null;
 
 export function loadStore() {
   try {
     fs.mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    data = { ...data, ...raw };
+    data = { ...data, ...raw, prefs: { ...DEFAULT_PREFS, ...(raw.prefs ?? {}) } };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('cannot read state', e);
   }
@@ -94,6 +112,29 @@ export const store = {
   },
   setLastSettings(agent: string, s: ChatSettings) {
     data.lastSettings[agent] = s;
+    save();
+  },
+  prefs(): Prefs {
+    return data.prefs;
+  },
+  setPrefs(p: Partial<Prefs>) {
+    data.prefs = { ...data.prefs, ...p };
+    save();
+  },
+  tgOffset(): number {
+    return data.tgOffset ?? 0;
+  },
+  setTgOffset(n: number) {
+    data.tgOffset = n;
+    save();
+  },
+  tgMessages(): Record<string, TgMessage> {
+    return (data.tgMessages ??= {});
+  },
+  setTgMessage(key: string, m: TgMessage | null) {
+    data.tgMessages ??= {};
+    if (m) data.tgMessages[key] = m;
+    else delete data.tgMessages[key];
     save();
   },
 };

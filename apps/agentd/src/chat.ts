@@ -17,6 +17,7 @@ export interface ChatSink {
   summaryChanged(chat: Chat): void;
   turnFinished(chat: Chat, outcome: 'done' | 'error' | 'interrupted'): void;
   approvalAdded(chat: Chat, a: Approval): void;
+  approvalRemoved(chat: Chat, approvalId: string): void;
 }
 
 /** Shorten big tool output for the wire: head + tail, full text stays in memory (/api/output). */
@@ -150,7 +151,9 @@ export class Chat {
   // ------------------------------------------------------------ live state
 
   patch(p: Partial<Omit<ChatState, 'items' | 'summary'>>) {
+    const removed = p.approvals ? this.state.approvals.filter((a) => !p.approvals!.some((x) => x.id === a.id)).map((a) => a.id) : [];
     Object.assign(this.state, p);
+    for (const id of removed) this.sink.approvalRemoved(this, id);
     this.sink.toSubscribers(this, { t: 'state', chatId: this.id, patch: p });
   }
 

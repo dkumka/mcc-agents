@@ -16,9 +16,13 @@ hub.register(codex);
 codex.start();
 
 startServer(hub);
+hub.startTelegram();
 
 hub.refresh().catch((e) => log.warn('initial refresh', e));
-setInterval(() => hub.refresh().catch(() => {}), 10_000);
+setInterval(() => {
+  hub.refresh().catch(() => {});
+  hub.tick();
+}, 10_000);
 setInterval(() => hub.sweep(), 60_000);
 
 function shutdown(sig: string) {

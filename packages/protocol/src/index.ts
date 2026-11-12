@@ -265,6 +265,18 @@ export interface AgentCapabilities {
   commands: SlashCommand[];
 }
 
+// ---------------------------------------------------------------- user preferences (server-side)
+
+export interface Prefs {
+  /** Send an unanswered approval / question to Telegram after this many seconds (0 = off). */
+  telegramDelaySec: number;
+}
+
+export interface PrefsState extends Prefs {
+  /** The agents' Telegram bot is configured (~/secrets/agents-telegram.env). */
+  telegramReady: boolean;
+}
+
 // ---------------------------------------------------------------- websocket
 
 export interface SendPayload {
@@ -292,6 +304,7 @@ export type ClientMessage =
   | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string }
   | { t: 'seen'; chatId: ChatId }
   | { t: 'release'; chatId: ChatId }
+  | { t: 'prefs'; prefs: Partial<Prefs> }
   | { t: 'ping' };
 
 export type ServerMessage =
@@ -306,6 +319,7 @@ export type ServerMessage =
   | { t: 'state'; chatId: ChatId; patch: Partial<Omit<ChatState, 'items' | 'summary'>> }
   | { t: 'created'; reqId: string; chatId: ChatId }
   | { t: 'error'; message: string; chatId?: ChatId; reqId?: string }
+  | { t: 'prefs'; prefs: PrefsState }
   | { t: 'pong' };
 
 // ---------------------------------------------------------------- http api
