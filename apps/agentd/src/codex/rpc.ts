@@ -22,6 +22,8 @@ export class AppServer extends EventEmitter {
   lastError?: string;
 
   start(): Promise<void> {
+    // after stop() (daemon shutdown) a late request — e.g. the 10-second list refresh — must not respawn it
+    if (this.stopped) return Promise.reject(new Error('codex app-server остановлен'));
     if (this.ready) return Promise.resolve();
     if (this.starting) return this.starting;
     this.starting = new Promise<void>((resolve, reject) => {
