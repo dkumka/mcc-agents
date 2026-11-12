@@ -169,7 +169,11 @@ export class Chat {
 
   setStatus(status: ChatStatus) {
     const s = this.state.approvals.length && status === 'running' ? 'waiting' : status;
-    this.setSummary({ status: s, updatedAt: Date.now() });
+    const prev = this.state.summary.status;
+    // Only real activity moves the chat up the list and makes it unread: a turn starting, asking, ending or failing.
+    // A CLI process starting or being closed while idle ('idle' → 'idle') is not activity.
+    const activity = s !== prev && (s === 'idle' ? prev === 'running' || prev === 'waiting' : s !== 'starting');
+    this.setSummary(activity ? { status: s, updatedAt: Date.now() } : { status: s });
   }
 
   setUsage(u: Usage) {

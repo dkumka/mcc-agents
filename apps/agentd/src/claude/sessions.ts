@@ -22,6 +22,8 @@ interface FileInfo {
   summary?: string;
   entrypoint?: string;
   createdAt?: number;
+  /** Time of the last user/assistant message — the file mtime also moves when the CLI appends service lines on exit. */
+  activityAt?: number;
   model?: string;
 }
 
@@ -100,9 +102,16 @@ async function readFrom(info: FileInfo, size: number) {
       if (m) info.createdAt = Date.parse(m[1]);
     }
     if (!info.firstPrompt && line.includes('"type":"user"')) info.firstPrompt = promptOf(line);
-    if (line.includes('"type":"assistant"')) {
+    const assistant = line.includes('"type":"assistant"');
+    if (assistant) {
       const m = line.slice(0, 4000).match(reModel);
       if (m) info.model = m[1];
+    }
+    if (assistant || line.includes('"type":"user"')) {
+      // top-level "timestamp" comes after "message", near the end of the line
+      const i = line.lastIndexOf('"timestamp":"');
+      const t = i >= 0 ? Date.parse(line.slice(i + 13, i + 13 + 40).split('"')[0]) : NaN;
+      if (t > (info.activityAt ?? 0)) info.activityAt = t;
     }
   }
   // the last line may be incomplete while the CLI writes: re-read it next time
@@ -125,7 +134,7 @@ export function toSummary(info: FileInfo): ChatSummary | null {
     cwd: info.cwd,
     title: title.replace(/\s+/g, ' ').slice(0, 140),
     createdAt: info.createdAt ?? info.mtimeMs,
-    updatedAt: info.mtimeMs,
+    updatedAt: info.activityAt ? Math.min(info.activityAt, info.mtimeMs) : info.mtimeMs,
     status: 'idle',
     origin: originOf(info.entrypoint),
     model: info.model,
