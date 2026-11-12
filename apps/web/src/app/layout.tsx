@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: 'mcc agents',
   description: 'Claude Code и Codex на сервере mcc',
   robots: { index: false, follow: false },
-  appleWebApp: { capable: true, title: 'mcc agents', statusBarStyle: 'default' },
+  appleWebApp: { capable: true, title: 'mcc agents', statusBarStyle: 'black-translucent' },
   formatDetection: { telephone: false },
 };
 

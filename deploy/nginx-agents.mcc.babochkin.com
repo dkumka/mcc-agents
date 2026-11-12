@@ -40,7 +40,7 @@ server {
         proxy_buffering off;
     }
 
-    location ~ ^/(manifest\.webmanifest|icon|apple-icon|favicon\.ico)$ {
+    location ~ ^/(manifest\.webmanifest|icon|apple-icon|favicon\.ico|app-icon/(192|512|maskable))$ {
         auth_request off;
         proxy_pass http://127.0.0.1:3110;
         proxy_set_header Host $host;

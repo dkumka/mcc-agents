@@ -11,6 +11,7 @@ import {
   PencilIcon,
   PinIcon,
   PinOffIcon,
+  RefreshCwIcon,
   SquareTerminalIcon,
   TerminalIcon,
   TriangleAlertIcon,
@@ -134,6 +135,9 @@ function Header({ state }: { state: ChatState }) {
             </DropdownMenuItem>
             <DropdownMenuItem className="py-2.5" onClick={() => setRename(true)}>
               <PencilIcon /> Переименовать
+            </DropdownMenuItem>
+            <DropdownMenuItem className="py-2.5" onClick={() => window.location.reload()}>
+              <RefreshCwIcon /> Обновить страницу
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="py-2.5" onClick={() => copyText(cmd).then(() => toast.success('Команда скопирована', { description: cmd }))}>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronRightIcon, MoonIcon, PinIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ChevronRightIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import type { ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
@@ -175,6 +175,9 @@ export function AppSidebar() {
           <a href="https://mcc.babochkin.com" className="flex-1 truncate px-1 text-[11px] text-muted-foreground hover:text-foreground">
             mcc.babochkin.com
           </a>
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => window.location.reload()} aria-label="Обновить" title="Обновить">
+            <RefreshCwIcon className="size-4" />
+          </Button>
           <ThemeSwitch />
           <Button variant="ghost" size="icon" className="size-8" onClick={() => setSettings(true)} aria-label="Настройки" title="Настройки">
             <SettingsIcon className="size-4" />
