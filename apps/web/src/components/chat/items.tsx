@@ -10,7 +10,6 @@ import {
   ClipboardListIcon,
   FilePenLineIcon,
   FilePlusIcon,
-  FileIcon,
   FileTextIcon,
   GlobeIcon,
   ListTodoIcon,
@@ -28,9 +27,12 @@ import {
 } from 'lucide-react';
 import type { ChatItem, NoticeItem, ThinkingItem, ToolCategory, ToolItem, UserItem } from '@mcc-agents/protocol';
 import { FileDiffView } from '@/components/diff-view';
+import { FileActions, FileTypeIcon } from '@/components/file-viewer';
 import { CopyButton, Markdown } from '@/components/markdown';
 import { api } from '@/lib/api';
+import { browserImage, fileKind, fmtSize, rawUrl, resolvePath } from '@/lib/files';
 import { duration, shortPath, tokens } from '@/lib/format';
+import { ui } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 
 const ICONS: Record<ToolCategory, typeof TerminalIcon> = {
@@ -67,32 +69,66 @@ const LABELS: Record<ToolCategory, string> = {
 
 // ---------------------------------------------------------------- user / assistant / notice
 
+function Thumb({ src, name, onOpen }: { src?: string; name: string; onOpen?: () => void }) {
+  const [err, setErr] = useState(false);
+  const body =
+    src && !err ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt={name} loading="lazy" onError={() => setErr(true)} className="max-h-48 min-h-12 min-w-12 max-w-full rounded-lg border bg-background object-contain" />
+    ) : (
+      <span className="flex h-16 items-center rounded-md border bg-background px-2.5 text-xs text-muted-foreground">🖼 {name}</span>
+    );
+  if (!onOpen) return body;
+  return (
+    <button type="button" onClick={onOpen} className="block max-w-full rounded-lg focus-visible:ring-2 focus-visible:ring-ring" aria-label={`Открыть ${name}`}>
+      {body}
+    </button>
+  );
+}
+
 export const UserBubble = memo(function UserBubble({ item }: { item: UserItem }) {
+  const all = item.files ?? [];
+  const pics = all.filter((f) => fileKind(f.name, f.mediaType) === 'image');
+  const docs = all.filter((f) => !pics.includes(f));
   return (
     <div className="flex justify-end">
       <div className="max-w-[88%] rounded-2xl rounded-br-md bg-secondary px-3.5 py-2.5 text-[15px] leading-relaxed md:max-w-[80%] md:text-sm">
-        {item.images?.length ? (
+        {pics.length ? (
           <div className="mb-2 flex flex-wrap gap-2">
-            {item.images.map((im, i) =>
-              im.dataUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={i} src={im.dataUrl} alt={im.name ?? 'изображение'} className="max-h-48 rounded-lg border object-contain" />
-              ) : (
-                <span key={i} className="rounded-md border bg-background px-2 py-1 text-xs text-muted-foreground">
-                  🖼 {im.name ?? 'изображение'}
-                </span>
-              ),
-            )}
+            {pics.map((f, i) => {
+              const preview = item.images?.[i]?.dataUrl;
+              return (
+                <Thumb
+                  key={f.path}
+                  name={f.name}
+                  src={preview ?? (browserImage(f.name) ? rawUrl(f.path, { thumb: true }) : undefined)}
+                  onOpen={() => ui.openFile({ path: f.path, name: f.name, size: f.size, mediaType: f.mediaType, preview })}
+                />
+              );
+            })}
+          </div>
+        ) : item.images?.length ? (
+          // older messages: the picture went to the model only, no original on the server
+          <div className="mb-2 flex flex-wrap gap-2">
+            {item.images.map((im, i) => (
+              <Thumb key={i} src={im.dataUrl} name={im.name ?? 'изображение'} />
+            ))}
           </div>
         ) : null}
-        {item.files?.length ? (
+        {docs.length ? (
           <div className={cn('flex flex-wrap gap-1.5', item.text && 'mb-2')}>
-            {item.files.map((f, i) => (
-              <span key={i} className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs" title={f.path}>
-                <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{f.name}</span>
-                {f.size ? <span className="shrink-0 text-muted-foreground">{f.size >= 1048576 ? `${(f.size / 1048576).toFixed(1)} МБ` : `${Math.max(1, Math.round(f.size / 1024))} КБ`}</span> : null}
-              </span>
+            {docs.map((f) => (
+              <button
+                key={f.path}
+                type="button"
+                onClick={() => ui.openFile({ path: f.path, name: f.name, size: f.size, mediaType: f.mediaType })}
+                className="inline-flex min-h-9 max-w-full items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 text-left text-xs hover:bg-muted"
+                title={f.path}
+              >
+                <FileTypeIcon name={f.name} className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 truncate">{f.name}</span>
+                {f.size ? <span className="shrink-0 text-muted-foreground">{fmtSize(f.size)}</span> : null}
+              </button>
             ))}
           </div>
         ) : null}
@@ -268,7 +304,22 @@ function ToolBody({ item, chatId, cwd, children }: { item: ToolItem; chatId: str
           {item.output && item.status !== 'running' && <Markdown text={item.output} className="text-[13px]" />}
         </div>
       );
-    case 'read':
+    case 'read': {
+      const p = item.title ? resolvePath(item.title, cwd) : null;
+      return (
+        <div className="space-y-2">
+          {p && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate font-mono" title={p}>
+                {shortPath(p, cwd)}
+              </span>
+              <FileActions path={p} />
+            </div>
+          )}
+          <OutputBlock item={item} chatId={chatId} />
+        </div>
+      );
+    }
     case 'search':
     case 'web':
       return <OutputBlock item={item} chatId={chatId} />;

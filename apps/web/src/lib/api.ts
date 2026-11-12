@@ -18,6 +18,7 @@ export const api = {
   ls: (path: string) => get<DirEntry[]>('ls', { path }),
   file: (path: string) => get<{ path: string; content: string; size: number; truncated: boolean; binary: boolean }>('file', { path }),
   git: (cwd: string) => get<GitStatus>('git', { cwd }),
+  uploads: () => get<{ dir: string; files: number; bytes: number }>('uploads'),
   output: (chatId: string, itemId: string) => get<{ output: string }>('output', { chatId, itemId }),
   taskOutput: (chatId: string, taskId: string) => get<{ output: string; file: string }>('task-output', { chatId, taskId }),
 };

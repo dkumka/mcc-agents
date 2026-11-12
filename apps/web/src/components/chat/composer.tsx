@@ -9,8 +9,9 @@ import { api, uploadFile } from '@/lib/api';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
-type Img = { mediaType: string; data: string; name: string; preview: string };
-type Attachment = { id: string; name: string; size: number; progress: number; file?: AttachedFile; error?: string; abort?: () => void };
+/** A picture for the model (downscaled) + the id of its original being uploaded to the server. */
+type Img = { mediaType: string; data: string; name: string; preview: string; uploadId?: string };
+type Attachment = { id: string; name: string; size: number; progress: number; file?: AttachedFile; error?: string; abort?: () => void; forImage?: boolean };
 
 function fmtSize(n: number) {
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} МБ`;
@@ -271,15 +272,19 @@ export function Composer({
   useEffect(() => setSel(0), [popup?.kind, popup?.query]);
 
   const uploading = attachments.some((a) => !a.file && !a.error);
-  const ready = attachments.filter((a) => a.file);
+  const ready = attachments.filter((a) => a.file && !a.forImage);
+  const chips = attachments.filter((a) => !a.forImage);
+  const original = (im: Img) => attachments.find((a) => a.id === im.uploadId)?.file;
   const canSend = (text.trim().length > 0 || images.length > 0 || ready.length > 0) && !sending && !uploading;
 
   const submit = async () => {
     if (!canSend) return;
+    // pictures with a stored original first: the chat pairs originals and previews by position
+    const pics = [...images].sort((a, b) => Number(!!original(b)) - Number(!!original(a)));
     const payload: SendPayload = {
       text: text.trim(),
-      images: images.map(({ mediaType, data, name }) => ({ mediaType, data, name })),
-      files: ready.map((a) => a.file!),
+      images: pics.map(({ mediaType, data, name }) => ({ mediaType, data, name })),
+      files: [...pics.map(original).filter((f): f is AttachedFile => !!f), ...ready.map((a) => a.file!)],
     };
     setText('');
     setImages([]);
@@ -293,13 +298,17 @@ export function Composer({
     }
   };
 
-  const upload = (f: File) => {
+  const upload = (f: File, forImage = false) => {
     const id = Math.random().toString(36).slice(2);
     const { promise, abort } = uploadFile(f, (p) => setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, progress: p } : a))));
-    setAttachments((cur) => [...cur, { id, name: f.name || 'file', size: f.size, progress: 0, abort }]);
+    setAttachments((cur) => [...cur, { id, name: f.name || 'file', size: f.size, progress: 0, abort, forImage }]);
     promise
       .then((file) => setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, file, progress: 1 } : a))))
-      .catch((e: Error) => setAttachments((cur) => cur.map((a) => (a.id === id ? { ...a, error: e.message } : a))));
+      .catch((e: Error) =>
+        // a picture still goes to the model without its stored original
+        setAttachments((cur) => (forImage ? cur.filter((a) => a.id !== id) : cur.map((a) => (a.id === id ? { ...a, error: e.message } : a)))),
+      );
+    return id;
   };
 
   const addFiles = async (list: FileList | File[]) => {
@@ -307,7 +316,18 @@ export function Composer({
     const pics = all.filter((f) => VISION.test(f.type) && f.size < 20 * 1024 * 1024).slice(0, 6);
     for (const f of all) if (!pics.includes(f)) upload(f);
     if (!pics.length) return;
-    const imgs = await Promise.all(pics.map((f) => prepareImage(f).catch(() => (upload(f), null))));
+    // the model gets a downscaled copy; the original is kept on the server (opens full size from the chat)
+    const imgs = await Promise.all(
+      pics.map((f) => {
+        const uploadId = upload(f, true);
+        return prepareImage(f)
+          .then((im): Img => ({ ...im, uploadId }))
+          .catch(() => {
+            setAttachments((cur) => cur.map((a) => (a.id === uploadId ? { ...a, forImage: false } : a)));
+            return null as Img | null;
+          });
+      }),
+    );
     setImages((cur) => [...cur, ...imgs.filter((x): x is Img => !!x)].slice(0, 8));
   };
 
@@ -343,9 +363,9 @@ export function Composer({
           if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         }}
       >
-        {attachments.length > 0 && (
+        {chips.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
-            {attachments.map((a) => (
+            {chips.map((a) => (
               <div
                 key={a.id}
                 className={cn('relative flex max-w-full items-center gap-2 overflow-hidden rounded-lg border bg-muted/40 py-1.5 pl-2 pr-7 text-xs', a.error && 'border-destructive/50')}
@@ -386,10 +406,20 @@ export function Composer({
               <div key={i} className="relative shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={im.preview} alt={im.name} className="size-16 rounded-lg border object-cover" />
+                {im.uploadId && !original(im) && attachments.some((a) => a.id === im.uploadId) && (
+                  <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/50" title="Сохраняю оригинал на сервере">
+                    <Loader2Icon className="size-4 animate-spin" />
+                  </span>
+                )}
                 <button
                   type="button"
                   aria-label="Убрать"
-                  onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+                  onClick={() => {
+                    const a = attachments.find((x) => x.id === im.uploadId);
+                    a?.abort?.();
+                    setAttachments((cur) => cur.filter((x) => x.id !== im.uploadId));
+                    setImages((cur) => cur.filter((_, j) => j !== i));
+                  }}
                   className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background"
                 >
                   <XIcon className="size-3" />

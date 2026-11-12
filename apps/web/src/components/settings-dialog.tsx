@@ -1,9 +1,12 @@
 'use client';
 
-import { CheckCircle2Icon, CircleAlertIcon, LogOutIcon, MoonIcon, SunIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CheckCircle2Icon, CircleAlertIcon, LogOutIcon, MoonIcon, PaperclipIcon, SunIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { api } from '@/lib/api';
+import { fmtSize } from '@/lib/files';
 import { store, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 
@@ -21,6 +24,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const prefs = useStore((s) => s.prefs);
   const [theme, setTheme] = useTheme();
   const delay = prefs?.telegramDelaySec ?? 60;
+  const [uploads, setUploads] = useState<{ dir: string; files: number; bytes: number } | null>(null);
+  useEffect(() => {
+    if (open) api.uploads().then(setUploads).catch(() => setUploads(null));
+  }, [open]);
   const options = DELAYS.some((d) => d.v === delay) ? DELAYS : [...DELAYS, { v: delay, label: `через ${delay} с` }];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -80,6 +87,20 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <Button variant={theme === 'dark' ? 'default' : 'outline'} className="h-11" onClick={() => setTheme('dark')}>
               <MoonIcon /> Тёмная
             </Button>
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="text-sm font-medium">Вложения</h3>
+          <div className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+            <PaperclipIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 space-y-1">
+              <div>{uploads ? (uploads.files ? `${uploads.files} файл. · ${fmtSize(uploads.bytes)}` : 'Пока нет') : '…'}</div>
+              <p className="text-xs text-muted-foreground">
+                Файлы, приложенные к чатам, хранятся на сервере бессрочно — сами не удаляются. Открыть их можно из чата или в панели «Файлы» → «Вложения».
+              </p>
+              {uploads && <div className="break-all font-mono text-[11px] text-muted-foreground">{uploads.dir.replace(/^\/home\/[^/]+/, '~')}</div>}
+            </div>
           </div>
         </section>
 

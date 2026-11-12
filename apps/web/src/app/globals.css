@@ -257,6 +257,16 @@
   border-radius: 0.3em;
   padding: 0.1em 0.35em;
 }
+.md code.file-link {
+  cursor: pointer;
+  color: var(--info);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.md code.file-link:hover {
+  text-decoration-style: solid;
+}
 .md table {
   display: block;
   overflow-x: auto;
@@ -393,4 +403,14 @@ html[data-resizing] * {
 [data-slot='alert-dialog-overlay'] {
   bottom: auto !important;
   height: var(--app-h, 100%) !important;
+}
+
+/* file viewer is full screen on phones: size it by the measured app height too */
+[data-slot='dialog-content'].file-viewer {
+  height: var(--app-h, 100dvh);
+}
+@media (min-width: 640px) {
+  [data-slot='dialog-content'].file-viewer {
+    height: min(90vh, 1000px);
+  }
 }

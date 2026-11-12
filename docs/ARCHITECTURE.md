@@ -65,17 +65,34 @@
 - `clientUserMessageId` = наш id сообщения → своё сообщение не дублируется.
 - `/compact` → `thread/compact/start`. Картинки → `uploads/<uuid>.<ext>` → `localImage`.
 
-## Вложения (любые файлы)
+## Вложения и файлы
 
 - Поле ввода: скрепка, вставка, перетаскивание. Картинки (png/jpeg/webp/gif/heic, до 20 МБ) идут модели как изображения
-  (уменьшаются до 2000 px); всё остальное — `POST /api/upload` (сырое тело, имя в `X-File-Name`, до 50 МБ, проверка Origin),
-  с прогрессом (`lib/api.ts → uploadFile`).
-- Файлы лежат в `~/.local/share/mcc-agents/uploads/<дата>/<id>-<имя>` (не в проекте — git чистый), хранятся 30 дней.
-  Claude запускается с `--add-dir` на эту папку; Codex работает без песочницы.
-- Агенту файлы передаются текстом: к сообщению дописывается блок `<attached_files>` с путями (`uploads.ts → textWithFiles`) —
-  модель читает файлы сама (`.docx/.xlsx/.pdf` — своими инструментами). При загрузке истории блок вырезается обратно в
-  `UserItem.files` (`splitFiles`), в чате это плашки с именем и размером. В `textWithFiles` пропускаются только пути внутри
-  папки загрузок.
+  (уменьшаются до 2000 px), а их **оригинал** параллельно загружается на сервер; всё остальное — только загрузка.
+  `POST /api/upload`: сырое тело, имя в `X-File-Name`, до 50 МБ, проверка Origin, прогресс (`lib/api.ts → uploadFile`).
+  «Отправить» ждёт окончания загрузок.
+- Файлы лежат в `~/.local/share/mcc-agents/uploads/<дата>/<id>-<имя>` (не в проекте — git чистый) и **хранятся бессрочно**:
+  автоудаления нет, удалять — вручную. Объём виден в «Настройках» (`GET /api/uploads`), сами файлы — в панели «Файлы» →
+  «Вложения». Claude запускается с `--add-dir` на эту папку; Codex работает без песочницы.
+- Агенту файлы передаются текстом: к сообщению дописывается блок `<attached_files>` с путями (`uploads.ts → textWithFiles`);
+  оригиналы картинок там помечены «уже приложена к сообщению», чтобы модель не читала их повторно. При загрузке истории
+  блок вырезается обратно в `UserItem.files` (`splitFiles`). В `textWithFiles` пропускаются только пути внутри папки загрузок.
+- **Отдача файлов** — `GET|HEAD /api/raw?path=…[&dl=1][&thumb=1][&name=…]` (`raw.ts`), только пути из `allowedPath`
+  (домашняя папка и `/tmp`):
+  - картинки, PDF, аудио и видео — `inline`; текст любого вида (в том числе `.html`) —
+    `text/plain`, чтобы файл из проекта не стал страницей на нашем домене (svg — картинкой, в песочнице); офисные документы, архивы и прочее — `attachment`; `dl=1` — всегда `attachment`;
+  - имя в `Content-Disposition` с `filename*=UTF-8''…` (кириллица), у загрузок без префикса `<id>-`;
+  - защита: `nosniff`, `Cross-Origin-Resource-Policy: same-origin`, `CSP: sandbox` (кроме PDF — Chrome не рисует PDF в
+    песочнице); `Range` (видео на iOS), `ETag`/304; загрузки кешируются навсегда (`immutable`), файлы проекта — `no-cache`;
+  - `thumb=1` — JPEG 640 px через Pillow (`python3 -I`), кеш в `~/.local/share/mcc-agents/thumbs/`; для маленьких
+    картинок и форматов, которые Pillow не знает, отдаётся оригинал.
+- **Просмотрщик** (`components/file-viewer.tsx`, состояние `ui.viewer`): на телефоне на весь экран, на компьютере — большое
+  окно. Картинка (нажатие — 100 %), PDF во встроенном просмотрщике браузера (на iPhone — карточка), видео, аудио, текст и код
+  с подсветкой; Word/Excel/архивы — карточка. Кнопки: «Скачать» (`dl=1`) и на телефонах «Поделиться» (Web Share API с
+  файлом — «Сохранить в Файлы», открыть в Word/Pages; файл скачивается заранее, до 40 МБ, чтобы лист открылся в рамках нажатия).
+- Что открывается в просмотрщике: плашки и картинки в сообщениях пользователя; пути к файлам в ответах агента (`код` и
+  ссылки — `looksLikeFile` + `resolvePath` от папки чата, `FileBase` в `markdown.tsx`); кнопки 👁/⬇ в заголовках правок и в
+  карточках чтения; документы и картинки из панели «Файлы» (текст/код там же в панели, плюс «Скачать»).
 - Проверка: `node scripts/files-test.mjs /run/mcc-agents/local.sock claude|codex <файл>`.
 
 ## Протокол (`packages/protocol`)
@@ -87,7 +104,7 @@
 WebSocket `/ws`: клиент → `subscribe/unsubscribe/visible/create/send/interrupt/decide/settings/stopTask/meta/seen/release`;
 сервер → `chats/chat/chatRemoved/limits/snapshot/item/delta/state/created/error`.
 
-HTTP `/api`: `POST upload` (вложения), `health`, `projects`, `caps?agent&cwd`, `files?cwd&q`, `ls?path`, `file?path`, `git?cwd`,
+HTTP `/api`: `POST upload` (вложения), `raw?path` (отдача файлов), `uploads` (объём вложений), `health`, `projects`, `caps?agent&cwd`, `files?cwd&q`, `ls?path`, `file?path`, `git?cwd`,
 `output?chatId&itemId` (полный вывод усечённого инструмента), `task-output?chatId&taskId`. Пути — только внутри `$HOME` и `/tmp`.
 
 ## Веб (`apps/web/src`)

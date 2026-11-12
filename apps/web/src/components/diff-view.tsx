@@ -2,7 +2,9 @@
 
 import { useMemo } from 'react';
 import type { FileDiff } from '@mcc-agents/protocol';
+import { FileActions } from '@/components/file-viewer';
 import { diffLines, diffStats, parseUnified, type DiffLine } from '@/lib/diff';
+import { resolvePath } from '@/lib/files';
 import { shortPath } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +52,7 @@ export function DiffLines({ lines, maxHeight = 'max-h-96', wrap = false }: { lin
 export function FileDiffView({ diff, cwd, maxHeight, wrap = true }: { diff: FileDiff; cwd?: string; maxHeight?: string; wrap?: boolean }) {
   const lines = useMemo(() => diffLines(diff), [diff]);
   const st = diffStats(lines);
+  const abs = diff.path ? resolvePath(diff.path, cwd ?? '/') : null;
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="flex items-center justify-between gap-2 border-b bg-muted/50 px-2.5 py-1.5 text-xs">
@@ -58,7 +61,10 @@ export function FileDiffView({ diff, cwd, maxHeight, wrap = true }: { diff: File
           {diff.kind === 'add' && <span className="ml-1.5 text-diff-add">новый</span>}
           {diff.kind === 'delete' && <span className="ml-1.5 text-diff-del">удалён</span>}
         </span>
-        <DiffStat {...st} />
+        <span className="flex shrink-0 items-center gap-1">
+          <DiffStat {...st} />
+          {diff.kind !== 'delete' && abs && <FileActions path={abs} className="-my-1 -mr-1.5" />}
+        </span>
       </div>
       <DiffLines lines={lines} maxHeight={maxHeight} wrap={wrap} />
     </div>

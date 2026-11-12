@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { toast } from 'sonner';
 import { AppSidebar } from '@/components/app-sidebar';
 import { DebugOverlay } from '@/components/debug-overlay';
+import { FileViewer } from '@/components/file-viewer';
 import { ChatView } from '@/components/chat/chat-view';
 import { NewChat } from '@/components/chat/new-chat';
 import { SidePanel } from '@/components/panel/side-panel';
@@ -61,6 +62,7 @@ export function App() {
           <Panel />
         </div>
       </SidebarInset>
+      <FileViewer />
       <DebugOverlay />
     </SidebarProvider>
   );

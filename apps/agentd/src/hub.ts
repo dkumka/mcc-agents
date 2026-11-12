@@ -23,7 +23,7 @@ import { logger } from './log.ts';
 import { store } from './store.ts';
 import { TelegramBridge } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
-import { pruneUploads, textWithFiles } from './uploads.ts';
+import { textWithFiles } from './uploads.ts';
 
 const log = logger('hub');
 
@@ -443,7 +443,6 @@ export class Hub implements ChatSink {
   /** Free memory of chats nobody looks at; let idle Codex threads go. */
   sweep() {
     const now = Date.now();
-    if (now % 3_600_000 < 60_000) pruneUploads();
     for (const chat of this.chats.values()) {
       if (!chat.loaded) continue;
       let watched = false;

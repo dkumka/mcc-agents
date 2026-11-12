@@ -1,11 +1,64 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { createContext, memo, useContext, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { CheckIcon, CopyIcon } from 'lucide-react';
+import { looksLikeFile, rawUrl as rawUrlFor, resolvePath } from '@/lib/files';
+import { ui } from '@/lib/ui';
 import { cn } from '@/lib/utils';
+
+/** Chat folder: paths the agent mentions are resolved against it and become clickable. */
+export const FileBase = createContext<string | null>(null);
+
+function FilePathCode({ text }: { text: string }) {
+  const cwd = useContext(FileBase);
+  const path = cwd && looksLikeFile(text) ? resolvePath(text, cwd) : null;
+  if (!path) return <code>{text}</code>;
+  return (
+    <code
+      role="button"
+      tabIndex={0}
+      title={`Открыть ${path}`}
+      className="file-link"
+      onClick={() => ui.openFile({ path })}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), ui.openFile({ path }))}
+    >
+      {text}
+    </code>
+  );
+}
+
+function LinkOrFile({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const cwd = useContext(FileBase);
+  let path: string | null = null;
+  if (href && cwd && (href.startsWith('file://') || !/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href))) {
+    let target = href;
+    try {
+      target = decodeURI(href);
+    } catch {}
+    if (looksLikeFile(target)) path = resolvePath(target, cwd);
+  }
+  if (path)
+    return (
+      <a
+        href={rawUrlFor(path)}
+        onClick={(e) => {
+          e.preventDefault();
+          ui.openFile({ path });
+        }}
+        className="file-link"
+      >
+        {children}
+      </a>
+    );
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+    </a>
+  );
+}
 
 export function CopyButton({ text, className, label }: { text: string; className?: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -71,11 +124,13 @@ const components: Components = {
     );
   },
   a({ href, children }) {
-    return (
-      <a href={href} target="_blank" rel="noreferrer noopener">
-        {children}
-      </a>
-    );
+    return <LinkOrFile href={href}>{children}</LinkOrFile>;
+  },
+  code({ className, children }) {
+    const text = typeof children === 'string' ? children : null;
+    // inline code only (fenced blocks have a language class or a trailing newline)
+    if (!className && text && !text.includes('\n')) return <FilePathCode text={text} />;
+    return <code className={className}>{children}</code>;
   },
   table({ children }) {
     return <table>{children}</table>;

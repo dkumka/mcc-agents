@@ -7,7 +7,8 @@ import { config } from './config.ts';
 import { HttpError, gitStatus, listDir, readFile, searchFiles, tailFile } from './fsapi.ts';
 import type { Client, Hub } from './hub.ts';
 import { logger } from './log.ts';
-import { handleUpload } from './uploads.ts';
+import { serveRaw } from './raw.ts';
+import { handleUpload, uploadsStats } from './uploads.ts';
 
 const log = logger('server');
 let clientSeq = 0;
@@ -22,7 +23,7 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
   const url = new URL(req.url ?? '/', 'http://x');
   const q = url.searchParams;
   try {
-    if (req.method !== 'GET') throw new HttpError(405, 'GET only');
+    if (req.method !== 'GET' && !(req.method === 'HEAD' && url.pathname === '/api/raw')) throw new HttpError(405, 'GET only');
     switch (url.pathname) {
       case '/api/health':
         return json(res, 200, { ok: true, version: config.version, ...hub.status() });
@@ -40,6 +41,10 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
         return json(res, 200, listDir(q.get('path') ?? config.home));
       case '/api/file':
         return json(res, 200, readFile(q.get('path') ?? ''));
+      case '/api/raw':
+        return await serveRaw(req, res, q);
+      case '/api/uploads':
+        return json(res, 200, uploadsStats());
       case '/api/git':
         return json(res, 200, await gitStatus(q.get('cwd') ?? ''));
       case '/api/output': {
@@ -67,6 +72,7 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
   } catch (e) {
     const status = e instanceof HttpError ? e.status : (e as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500;
     if (status === 500) log.error(`api ${url.pathname}`, e);
+    if (res.headersSent) return void res.destroy();
     json(res, status, { error: (e as Error).message });
   }
 }

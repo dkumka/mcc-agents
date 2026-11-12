@@ -1,15 +1,17 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeftIcon, ChevronRightIcon, FileIcon, FolderIcon, GitBranchIcon, Loader2Icon, RefreshCwIcon, SquareIcon, WrapTextIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronRightIcon, DownloadIcon, FolderIcon, GitBranchIcon, HouseIcon, Loader2Icon, PaperclipIcon, RefreshCwIcon, SquareIcon, WrapTextIcon, XIcon } from 'lucide-react';
 import type { BgTask, ChatState, DirEntry, GitStatus } from '@mcc-agents/protocol';
 import { CodeView } from '@/components/code-view';
 import { DiffStat, UnifiedDiffView } from '@/components/diff-view';
+import { FileTypeIcon } from '@/components/file-viewer';
 import { CopyButton } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { diffStats, parseUnified, splitGitDiff } from '@/lib/diff';
+import { displayName, fileKind, fmtSize, rawUrl } from '@/lib/files';
 import { shortPath, timeAgo } from '@/lib/format';
 import { store } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
@@ -89,7 +91,20 @@ function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [file, setFile] = useState<{ path: string; content: string; truncated: boolean; binary: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [uploadsDir, setUploadsDir] = useState<string | null>(null);
   useEffect(() => setDir(cwd), [cwd]);
+  useEffect(() => {
+    api.uploads().then((u) => setUploadsDir(u.dir)).catch(() => {});
+  }, []);
+  const open = (e: DirEntry) => {
+    if (e.dir) return setDir(e.path);
+    // documents, pictures, media → the full-screen viewer; text/code stays here in the panel
+    if (fileKind(e.name) !== 'text') return ui.openFile({ path: e.path, name: displayName(e.path), size: e.size });
+    api
+      .file(e.path)
+      .then((f) => (f.binary ? ui.openFile({ path: e.path, name: e.name, size: e.size }) : setFile(f)))
+      .catch((x) => setErr(x.message));
+  };
   useEffect(() => {
     setEntries(null);
     api
@@ -109,6 +124,11 @@ function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
           </Button>
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{shortPath(file.path, cwd)}</span>
           <CopyButton text={file.path} label="путь" />
+          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Скачать" title="Скачать">
+            <a href={rawUrl(file.path, { dl: true })} download={displayName(file.path)}>
+              <DownloadIcon className="size-4" />
+            </a>
+          </Button>
         </div>
         <div className="scrollbar-thin min-h-0 flex-1 overflow-auto py-2">
           {file.binary ? (
@@ -130,6 +150,16 @@ function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
           </Button>
         )}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{shortPath(dir)}</span>
+        {dir !== cwd && (
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => setDir(cwd)} aria-label="К папке проекта" title="К папке проекта">
+            <HouseIcon className="size-4" />
+          </Button>
+        )}
+        {uploadsDir && !dir.startsWith(uploadsDir) && (
+          <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs" onClick={() => setDir(uploadsDir)} title="Файлы, приложенные к чатам">
+            <PaperclipIcon className="size-3.5" /> Вложения
+          </Button>
+        )}
       </div>
       {err && <div className="p-2 text-sm text-destructive">{err}</div>}
       {!entries && !err && <div className="flex justify-center p-6"><Loader2Icon className="size-5 animate-spin text-muted-foreground" /></div>}
@@ -137,12 +167,12 @@ function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
         <button
           key={e.path}
           type="button"
-          onClick={() => (e.dir ? setDir(e.path) : api.file(e.path).then(setFile).catch((x) => setErr(x.message)))}
+          onClick={() => open(e)}
           className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
         >
-          {e.dir ? <FolderIcon className="size-4 shrink-0 text-muted-foreground" /> : <FileIcon className="size-4 shrink-0 text-muted-foreground" />}
-          <span className="min-w-0 flex-1 truncate">{e.name}</span>
-          {!e.dir && e.size !== undefined && <span className="shrink-0 text-[11px] text-muted-foreground tabular">{e.size > 1024 ? `${Math.round(e.size / 1024)} КБ` : `${e.size} Б`}</span>}
+          {e.dir ? <FolderIcon className="size-4 shrink-0 text-muted-foreground" /> : <FileTypeIcon name={e.name} className="size-4 shrink-0 text-muted-foreground" />}
+          <span className="min-w-0 flex-1 truncate">{e.dir ? e.name : displayName(e.path)}</span>
+          {!e.dir && e.size !== undefined && <span className="shrink-0 text-[11px] text-muted-foreground tabular">{fmtSize(e.size)}</span>}
         </button>
       ))}
     </div>

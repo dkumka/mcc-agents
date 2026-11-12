@@ -5,13 +5,16 @@ import type http from 'node:http';
 import type { AttachedFile, SendPayload } from '@mcc-agents/protocol';
 import { config } from './config.ts';
 import { logger } from './log.ts';
+import { mimeOf } from './mime.ts';
 
 const log = logger('uploads');
 
-/** Files the user attaches live here (not in the project, so git stays clean). Claude gets it via --add-dir. */
+/**
+ * Files the user attaches live here (not in the project, so git stays clean). Claude gets it via --add-dir.
+ * Kept forever: nothing deletes them automatically (the user removes them by hand if needed).
+ */
 export const UPLOADS_DIR = path.join(config.dataDir, 'uploads');
 export const MAX_UPLOAD = 50 * 1024 * 1024;
-const KEEP_DAYS = 30;
 
 function safeName(raw: string): string {
   const base = path.basename(raw.replace(/\\/g, '/')).replace(/[\u0000-\u001f\u007f/]/g, '').trim();
@@ -67,25 +70,51 @@ export function handleUpload(req: http.IncomingMessage, res: http.ServerResponse
   req.pipe(out);
   out.on('finish', () => {
     if (failed) return;
-    const f: AttachedFile = { path: file, name, size, mediaType: String(req.headers['content-type'] ?? '') || undefined };
+    const f: AttachedFile = { path: file, name, size, mediaType: contentType(req.headers['content-type'], name) };
     log.info(`upload ${name} ${size} B`);
     reply(200, f);
   });
 }
 
-/** Delete uploads older than KEEP_DAYS (called from the periodic sweep). */
-export function pruneUploads() {
-  let days: string[] = [];
-  try {
-    days = fs.readdirSync(UPLOADS_DIR);
-  } catch {
-    return;
+/** Stored name is `<uuid8>-<original>`: show the original. */
+export function displayName(p: string): string {
+  const base = path.basename(p);
+  if (path.resolve(p).startsWith(UPLOADS_DIR + '/')) {
+    const m = base.match(/^[0-9a-f]{8}-(.+)$/);
+    if (m) return m[1];
   }
-  const cutoff = Date.now() - KEEP_DAYS * 86_400_000;
-  for (const d of days) {
-    const t = Date.parse(d);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(d) && t < cutoff) fs.rm(path.join(UPLOADS_DIR, d), { recursive: true, force: true }, () => {});
-  }
+  return base;
+}
+
+/** How much the uploads folder holds (for Settings). */
+export function uploadsStats(): { dir: string; files: number; bytes: number } {
+  let files = 0;
+  let bytes = 0;
+  const walk = (dir: string) => {
+    let list: fs.Dirent[] = [];
+    try {
+      list = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of list) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) {
+        files++;
+        try {
+          bytes += fs.statSync(p).size;
+        } catch {}
+      }
+    }
+  };
+  walk(UPLOADS_DIR);
+  return { dir: UPLOADS_DIR, files, bytes };
+}
+
+function contentType(h: string | undefined, name: string): string {
+  const t = String(h ?? '').split(';')[0].trim().toLowerCase();
+  return t && t !== 'application/octet-stream' ? t : mimeOf(name);
 }
 
 function human(n: number): string {
@@ -101,7 +130,9 @@ const CLOSE = '</attached_files>';
 export function textWithFiles(p: SendPayload): string {
   const files = (p.files ?? []).filter((f) => path.resolve(f.path).startsWith(UPLOADS_DIR + '/') && fs.existsSync(f.path));
   if (!files.length) return p.text;
-  const lines = files.map((f) => `- ${f.path} — «${f.name}», ${human(f.size)}`);
+  const lines = files.map(
+    (f) => `- ${f.path} — «${f.name}», ${human(f.size)}${/^image\//.test(f.mediaType ?? '') ? ' (оригинал картинки, она уже приложена к сообщению)' : ''}`,
+  );
   return `${p.text}\n\n${OPEN}\nПользователь приложил файлы (они на диске; прочитай нужные сам — для .docx/.xlsx/.pdf и т.п. используй подходящие инструменты):\n${lines.join('\n')}\n${CLOSE}`;
 }
 
@@ -119,7 +150,7 @@ export function splitFiles(text: string): { text: string; files: AttachedFile[] 
     try {
       size = fs.statSync(m[1]).size;
     } catch {}
-    files.push({ path: m[1], name: m[2], size });
+    files.push({ path: m[1], name: m[2], size, mediaType: mimeOf(m[1]) });
   }
   return { text: (text.slice(0, i) + text.slice(j + CLOSE.length)).trim(), files };
 }

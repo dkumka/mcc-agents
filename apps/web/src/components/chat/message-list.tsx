@@ -3,7 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, Loader2Icon } from 'lucide-react';
 import type { ChatItem, ChatState, ToolItem } from '@mcc-agents/protocol';
-import { Markdown } from '@/components/markdown';
+import { FileBase, Markdown } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { NoticeLine, ThinkingBlock, ToolCard, UserBubble, isVisible } from './items';
@@ -129,6 +129,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scroller} onScroll={onScroll} className="scrollbar-thin h-full overflow-y-auto overscroll-contain">
+        <FileBase.Provider value={state.summary.cwd}>
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-6 pt-4 md:px-6">
           {top.length === 0 && !busy && <div className="py-16 text-center text-sm text-muted-foreground">Сообщений пока нет</div>}
           {top.map((it) => (
@@ -139,6 +140,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           {busy && !streamingNow && <Working since={workingSince} label={state.summary.status === 'starting' ? 'Запускаю' : 'Работает'} />}
           {footer}
         </div>
+        </FileBase.Provider>
       </div>
       {showDown && (
         <Button
