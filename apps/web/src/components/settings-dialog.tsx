@@ -6,14 +6,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { store, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
-import { useTopbar, type TopbarMode } from '@/lib/topbar';
-import { cn } from '@/lib/utils';
-
-const TOPBAR: { v: TopbarMode; label: string; hint: string }[] = [
-  { v: 'flow', label: 'Как было', hint: 'Шапка просто ниже строки статуса' },
-  { v: 'fixed', label: 'Закреплённая полоса', hint: 'Сплошная закреплённая полоса под часами — iOS может перестать размывать верх' },
-  { v: 'pad', label: 'Больше отступ сверху', hint: 'Шапка ниже зоны размытия (теряется ~36 pt экрана)' },
-];
 
 const DELAYS: { v: number; label: string }[] = [
   { v: 0, label: 'Не отправлять' },
@@ -28,7 +20,6 @@ const DELAYS: { v: number; label: string }[] = [
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const prefs = useStore((s) => s.prefs);
   const [theme, setTheme] = useTheme();
-  const [topbar, setTopbar] = useTopbar();
   const delay = prefs?.telegramDelaySec ?? 60;
   const options = DELAYS.some((d) => d.v === delay) ? DELAYS : [...DELAYS, { v: delay, label: `через ${delay} с` }];
   return (
@@ -89,29 +80,6 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <Button variant={theme === 'dark' ? 'default' : 'outline'} className="h-11" onClick={() => setTheme('dark')}>
               <MoonIcon /> Тёмная
             </Button>
-          </div>
-        </section>
-
-        <section className="space-y-2">
-          <h3 className="text-sm font-medium">Экспериментально: верх экрана на iPhone</h3>
-          <p className="text-sm text-muted-foreground">Если верх приложения на экране «Домой» размыт — попробуйте варианты, действует сразу.</p>
-          <div className="grid gap-1.5">
-            {TOPBAR.map((t) => (
-              <button
-                key={t.v}
-                type="button"
-                onClick={() => setTopbar(t.v)}
-                className={cn('flex min-h-11 w-full items-start gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors', topbar === t.v ? 'border-primary bg-primary/5' : 'hover:bg-muted/60')}
-              >
-                <span className={cn('mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border', topbar === t.v && 'border-primary')}>
-                  {topbar === t.v && <span className="size-2 rounded-full bg-primary" />}
-                </span>
-                <span className="min-w-0">
-                  <span className="font-medium">{t.label}</span>
-                  <span className="block text-xs text-muted-foreground">{t.hint}</span>
-                </span>
-              </button>
-            ))}
           </div>
         </section>
 

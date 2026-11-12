@@ -392,22 +392,3 @@ html[data-resizing] * {
   bottom: auto !important;
   height: var(--app-h, 100%) !important;
 }
-
-/* ------------------------------------------------------------ iOS top edge experiment (lib/topbar.ts) */
-.topbar-shield {
-  display: none;
-}
-html[data-topbar='fixed'] .topbar-shield {
-  display: block;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: env(safe-area-inset-top);
-  background: var(--background);
-  z-index: 60;
-  pointer-events: none;
-}
-html[data-topbar='pad'] .pt-safe {
-  padding-top: calc(env(safe-area-inset-top) + 36px);
-}

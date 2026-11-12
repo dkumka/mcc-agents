@@ -33,21 +33,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const dark = jar.get('theme')?.value === 'dark';
   const sidebarW = px(jar.get('mcc_sidebar_w')?.value, 220, 480);
   const panelW = px(jar.get('mcc_panel_w')?.value, 320, 1400);
-  const tb = jar.get('mcc_topbar')?.value;
-  const topbar = tb === 'fixed' || tb === 'pad' ? tb : 'flow';
   const style = {
     colorScheme: dark ? 'dark' : 'light',
     ...(sidebarW ? { '--sidebar-w': `${sidebarW}px` } : {}),
     ...(panelW ? { '--panel-w': `${panelW}px` } : {}),
   } as React.CSSProperties;
   return (
-    <html lang="ru" className={dark ? 'dark' : undefined} style={style} data-topbar={topbar} suppressHydrationWarning>
+    <html lang="ru" className={dark ? 'dark' : undefined} style={style} suppressHydrationWarning>
       <head>
         <meta name="theme-color" content={dark ? '#0a0a0a' : '#ffffff'} />
       </head>
       <body className="antialiased">
-        {/* opaque bar under the iOS status bar — only shown in the «fixed» top bar experiment */}
-        <div className="topbar-shield" aria-hidden />
         <TooltipProvider delayDuration={400}>
           {children}
           <Toaster position="top-center" />
