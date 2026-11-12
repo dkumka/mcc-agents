@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronRightIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
-import type { ChatSummary } from '@mcc-agents/protocol';
+import { ChevronRightIcon, CodeXmlIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
 import { ResizeHandle } from '@/components/resize-handle';
@@ -23,7 +23,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { baseName, shortPath, timeAgo } from '@/lib/format';
-import { store, useStore } from '@/lib/store';
+import { modeOf, store, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +40,47 @@ function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPic
   );
 }
 
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+
+/** "Сегодня / Вчера / 7 дней / 30 дней / <месяц>" — like the chat list in the Claude app. */
+function dateBucket(ts: number, now = new Date()): string {
+  const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ts >= day) return 'Сегодня';
+  if (ts >= day - 86_400_000) return 'Вчера';
+  if (ts >= day - 7 * 86_400_000) return 'Последние 7 дней';
+  if (ts >= day - 30 * 86_400_000) return 'Последние 30 дней';
+  const d = new Date(ts);
+  return d.getFullYear() === now.getFullYear() ? MONTHS[d.getMonth()] : `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function ModeSwitch({ mode }: { mode: ChatMode }) {
+  const { isMobile } = useSidebar();
+  const items: { m: ChatMode; label: string; icon: typeof CodeXmlIcon }[] = [
+    { m: 'chat', label: 'Чат', icon: MessageCircleIcon },
+    { m: 'code', label: 'Код', icon: CodeXmlIcon },
+  ];
+  return (
+    <div role="tablist" aria-label="Режим" className="grid grid-cols-2 gap-0.5 rounded-lg bg-sidebar-accent p-0.5">
+      {items.map(({ m, label, icon: Icon }) => (
+        <button
+          key={m}
+          type="button"
+          role="tab"
+          aria-selected={mode === m}
+          onClick={() => mode !== m && store.switchMode(m)}
+          className={cn(
+            'flex items-center justify-center gap-1.5 rounded-md text-sm font-medium transition-colors',
+            isMobile ? 'h-9' : 'h-8',
+            mode === m ? 'bg-background text-foreground shadow-sm ring-1 ring-foreground/5' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          <Icon className="size-4" /> {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ThemeSwitch() {
   const [theme, setTheme] = useTheme();
   const dark = theme === 'dark';
@@ -53,6 +94,7 @@ function ThemeSwitch() {
 export function AppSidebar() {
   const chats = useStore((s) => s.chats);
   const route = useStore((s) => s.route);
+  const mode = useStore(modeOf);
   const limits = useStore((s) => s.limits);
   const connected = useStore((s) => s.connected);
   const everConnected = useStore((s) => s.everConnected);
@@ -63,28 +105,33 @@ export function AppSidebar() {
   const [settings, setSettings] = useState(false);
   const activeId = route.kind === 'chat' ? route.chatId : null;
 
-  const { pinned, groups } = useMemo(() => {
-    const list = Object.values(chats).sort((a, b) => b.updatedAt - a.updatedAt);
+  const { pinned, groups, dated } = useMemo(() => {
+    const list = Object.values(chats)
+      .filter((c) => (c.mode ?? 'code') === mode)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
     const ql = q.trim().toLowerCase();
-    const filtered = ql ? list.filter((c) => c.title.toLowerCase().includes(ql) || c.cwd.toLowerCase().includes(ql)) : list;
+    const filtered = ql ? list.filter((c) => c.title.toLowerCase().includes(ql) || (mode === 'code' && c.cwd.toLowerCase().includes(ql))) : list;
     const pinned = filtered.filter((c) => c.pinned);
     const by = new Map<string, ChatSummary[]>();
+    const dated = new Map<string, ChatSummary[]>();
     for (const c of filtered) {
       if (c.pinned) continue;
-      const arr = by.get(c.cwd) ?? [];
+      const key = mode === 'chat' ? dateBucket(c.updatedAt) : c.cwd;
+      const into = mode === 'chat' ? dated : by;
+      const arr = into.get(key) ?? [];
       arr.push(c);
-      by.set(c.cwd, arr);
+      into.set(key, arr);
     }
     const groups = [...by.entries()].sort((a, b) => b[1][0].updatedAt - a[1][0].updatedAt);
-    return { pinned, groups };
-  }, [chats, q]);
+    return { pinned, groups, dated: [...dated.entries()] };
+  }, [chats, q, mode]);
 
   const pick = (id: string) => {
     store.navigate({ kind: 'chat', chatId: id });
     if (isMobile) setOpenMobile(false);
   };
   const newChat = (cwd?: string) => {
-    store.navigate({ kind: 'new', cwd });
+    store.navigate({ kind: 'new', cwd, mode });
     if (isMobile) setOpenMobile(false);
   };
 
@@ -99,15 +146,16 @@ export function AppSidebar() {
           </div>
           {!connected && everConnected && <WifiOffIcon className="size-4 text-destructive" aria-label="нет связи" />}
         </div>
+        <ModeSwitch mode={mode} />
         <Button className="h-10 justify-start gap-2 md:h-9" onClick={() => newChat()}>
-          <PlusIcon className="size-4" /> Новый чат
+          <PlusIcon className="size-4" /> {mode === 'chat' ? 'Новая беседа' : 'Новый чат'}
         </Button>
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Поиск чатов"
+            placeholder={mode === 'chat' ? 'Поиск бесед' : 'Поиск чатов'}
             className="h-9 w-full rounded-md border bg-background pl-8 pr-2 text-sm outline-none focus:border-ring"
           />
         </div>
@@ -127,6 +175,18 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         )}
+        {dated.map(([label, list]) => (
+          <SidebarGroup key={label} className="py-1">
+            <SidebarGroupLabel>{label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {list.map((c) => (
+                  <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
         {groups.map(([cwd, list]) => {
           const limit = expanded[cwd] || q ? list.length : 6;
           const isCollapsed = collapsed[cwd] && !q;
@@ -159,7 +219,11 @@ export function AppSidebar() {
             </SidebarGroup>
           );
         })}
-        {!groups.length && !pinned.length && <div className="px-4 py-6 text-sm text-muted-foreground">{q ? 'Ничего не найдено' : connected ? 'Чатов пока нет' : 'Подключаюсь…'}</div>}
+        {!groups.length && !dated.length && !pinned.length && (
+          <div className="px-4 py-6 text-sm text-muted-foreground">
+            {q ? 'Ничего не найдено' : !connected ? 'Подключаюсь…' : mode === 'chat' ? 'Бесед пока нет. Спросите о чём угодно — без проекта и папки.' : 'Чатов пока нет'}
+          </div>
+        )}
       </SidebarContent>
       <SidebarFooter className="pb-safe gap-1 border-t">
         <div className="space-y-1 px-1 text-[11px] text-muted-foreground">

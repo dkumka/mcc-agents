@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DirEntry, GitStatus } from '@mcc-agents/protocol';
-import { allowedPath } from './config.ts';
+import { allowedPath, config } from './config.ts';
 
 function run(cmd: string, args: string[], cwd: string, maxBuffer = 8 * 1024 * 1024): Promise<{ out: string; code: number }> {
   return new Promise((resolve) => {
@@ -38,6 +38,8 @@ export function listDir(p: string): DirEntry[] {
   const out: DirEntry[] = [];
   for (const e of entries) {
     if (HIDDEN.has(e.name)) continue;
+    // the instructions link every conversation folder has (see chat-dirs.ts) — noise in the file list
+    if (e.name === 'AGENTS.md' && e.isSymbolicLink() && abs.startsWith(path.resolve(config.chatRoot) + '/')) continue;
     const full = path.join(abs, e.name);
     let dir = e.isDirectory();
     let size: number | undefined;

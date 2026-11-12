@@ -96,11 +96,12 @@ function RenameDialog({ open, onOpenChange, chatId, title }: { open: boolean; on
   );
 }
 
-function Header({ state }: { state: ChatState }) {
+function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | null }) {
   const s = state.summary;
   const [rename, setRename] = useState(false);
   const running = state.tasks.filter((t) => t.status === 'running').length;
   const cmd = terminalCommand(s.agent, s.nativeId, s.cwd);
+  const isChat = s.mode === 'chat';
   return (
     <header className="pt-safe flex shrink-0 items-center gap-1 border-b bg-background/95 px-2 backdrop-blur md:px-3">
       <div className="flex h-12 w-full min-w-0 items-center gap-1">
@@ -112,10 +113,10 @@ function Header({ state }: { state: ChatState }) {
             {(s.status === 'running' || s.status === 'starting') && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-info" />}
           </div>
           <div className="truncate text-[11px] text-muted-foreground" title={s.cwd}>
-            {baseName(s.cwd)} · {shortPath(s.cwd)}
+            {isChat ? ['Беседа', caps?.models.find((m) => m.id === (state.settings.model ?? s.model))?.label ?? s.model].filter(Boolean).join(' · ') : `${baseName(s.cwd)} · ${shortPath(s.cwd)}`}
           </div>
         </div>
-        <PanelButton tab="changes" icon={GitCompareArrowsIcon} label="Изменения (git)" />
+        {!isChat && <PanelButton tab="changes" icon={GitCompareArrowsIcon} label="Изменения (git)" />}
         <div className="hidden sm:contents">
           <PanelButton tab="files" icon={FolderTreeIcon} label="Файлы" />
         </div>
@@ -192,7 +193,7 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <Header state={state} />
+      <Header state={state} caps={caps} />
       {(state.error || state.busyElsewhere) && (
         <div className="flex shrink-0 items-start gap-2 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />

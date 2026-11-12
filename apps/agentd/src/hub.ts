@@ -18,6 +18,7 @@ import type {
   UserItem,
 } from '@mcc-agents/protocol';
 import { Chat, type ChatSink } from './chat.ts';
+import { CHAT_ROOT, isChatDir, newChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
 import { store } from './store.ts';
@@ -104,6 +105,7 @@ export class Hub implements ChatSink {
     const out = { ...s };
     if (meta.title) out.title = meta.title;
     out.pinned = !!meta.pinned;
+    out.mode = isChatDir(out.cwd) ? 'chat' : 'code';
     if (meta.web && out.origin !== 'web') out.origin = 'web';
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
@@ -179,7 +181,9 @@ export class Hub implements ChatSink {
         }
       } catch {}
     }
-    for (const c of this.chats.values()) if (c.cwd && fs.existsSync(c.cwd)) add(c.cwd, c.summary.updatedAt, 1);
+    // conversations (~/chat/…) are not projects
+    for (const c of this.chats.values()) if (c.cwd && !isChatDir(c.cwd) && fs.existsSync(c.cwd)) add(c.cwd, c.summary.updatedAt, 1);
+    map.delete(CHAT_ROOT);
     for (const p of map.values()) p.isGit = fs.existsSync(path.join(p.path, '.git'));
     return [...map.values()].sort((a, b) => b.lastActivity - a.lastActivity || a.name.localeCompare(b.name));
   }
@@ -337,7 +341,8 @@ export class Hub implements ChatSink {
       case 'create': {
         const adapter = this.adapters[msg.agent];
         if (!adapter) throw new Error('неизвестный агент');
-        if (!msg.cwd || !fs.existsSync(msg.cwd)) throw new Error(`папка не найдена: ${msg.cwd}`);
+        if (msg.mode === 'chat') msg.cwd = newChatDir();
+        else if (!msg.cwd || !fs.existsSync(msg.cwd)) throw new Error(`папка не найдена: ${msg.cwd}`);
         const settings: ChatSettings = { ...msg.settings };
         const nativeId = await adapter.prepare(msg.cwd, settings);
         const id = `${msg.agent}:${nativeId}`;

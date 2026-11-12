@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, GitBranchIcon } from 'lucide-react';
-import type { AgentKind, ChatSettings, ProjectInfo, SendPayload } from '@mcc-agents/protocol';
+import type { AgentCapabilities, AgentKind, ChatMode, ChatSettings, ProjectInfo, SendPayload } from '@mcc-agents/protocol';
 import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { api } from '@/lib/api';
 import { shortPath } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
@@ -101,13 +102,134 @@ function lastSettings(agent: AgentKind): ChatSettings {
   }
 }
 
-export function NewChat({ initialCwd, initialAgent }: { initialCwd?: string; initialAgent?: AgentKind }) {
+/** Conversations start the same way every time: Claude Opus (or Codex if picked), automatic permissions. */
+function chatDefaults(agent: AgentKind, caps: AgentCapabilities): ChatSettings {
+  const ids = caps.models.map((m) => m.id);
+  const has = (m: string) => caps.permissionModes.some((x) => x.id === m);
+  if (agent === 'claude') {
+    const opus = ids.find((m) => m === 'opus') ?? ids.find((m) => /opus/i.test(m) && !m.includes('['));
+    return { model: opus ?? caps.defaults.model, effort: caps.defaults.effort, permissionMode: has('auto') ? 'auto' : caps.defaults.permissionMode };
+  }
+  return { model: caps.defaults.model, effort: caps.defaults.effort, permissionMode: has('on-request') ? 'on-request' : caps.defaults.permissionMode };
+}
+
+export function NewChat({ initialCwd, initialAgent, mode = 'code' }: { initialCwd?: string; initialAgent?: AgentKind; mode?: ChatMode }) {
+  return mode === 'chat' ? <NewConversation key="chat" initialAgent={initialAgent} /> : <NewProjectChat key="code" initialCwd={initialCwd} initialAgent={initialAgent} />;
+}
+
+function AgentCards({ agent, onChange, compact }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean }) {
+  const limits = useStore((s) => s.limits);
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {(['claude', 'codex'] as AgentKind[]).map((a) => (
+        <button
+          key={a}
+          type="button"
+          onClick={() => onChange(a)}
+          className={cn(
+            'flex items-center gap-2.5 rounded-xl border px-3 text-left transition-colors',
+            compact ? 'h-12' : 'h-14',
+            agent === a ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
+          )}
+        >
+          <AgentMark agent={a} className="size-6 text-xs" />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">{AGENT_NAME[a]}</span>
+            <span className="block truncate text-[11px] text-muted-foreground">
+              <LimitsInline limits={limits} agent={a} />
+            </span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+}
+
+/** "Чат" mode: no project, a fresh folder per conversation is made by the server. */
+function NewConversation({ initialAgent }: { initialAgent?: AgentKind }) {
+  const [agent, setAgent] = useState<AgentKind>(initialAgent ?? 'claude');
+  const [settings, setSettings] = useState<ChatSettings>({});
+  const [sending, setSending] = useState(false);
+  const isMobile = useIsMobile();
+  const caps = useCaps(agent, HOME);
+  const [hello] = useState(greeting);
+
+  useEffect(() => {
+    if (caps) setSettings(chatDefaults(agent, caps));
+  }, [caps, agent]);
+
+  const onSend = async (p: SendPayload) => {
+    setSending(true);
+    try {
+      const clean = Object.fromEntries(Object.entries(settings).filter(([, v]) => v)) as ChatSettings;
+      if (agent === 'claude' && clean.model === 'default') delete clean.model;
+      const id = await store.create(agent, '', clean, p, 'chat');
+      store.navigate({ kind: 'chat', chatId: id }, { replace: true });
+    } catch (e) {
+      toast.error((e as Error).message);
+      throw e;
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const composer = (
+    <Composer
+      draftKey={`new-chat:${agent}`}
+      cwd={HOME}
+      caps={caps}
+      settings={settings}
+      onSettings={(st) => setSettings((cur) => ({ ...cur, ...st }))}
+      busy={false}
+      onSend={onSend}
+      sending={sending}
+      placeholder="Спросите что угодно…"
+      autoFocus
+    />
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="pt-safe flex shrink-0 items-center gap-1 px-2 md:px-3">
+        <div className="flex h-12 items-center gap-1">
+          <SidebarTrigger className="size-9" />
+          <span className="text-sm font-medium">Новая беседа</span>
+        </div>
+      </header>
+      <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center gap-6 py-8">
+          <div className="space-y-1.5 px-4 text-center">
+            <h2 className="font-serif text-2xl tracking-tight md:text-3xl">{hello}! Чем помочь?</h2>
+            <p className="text-sm text-muted-foreground">Вопросы, советы, документы, расчёты — без проекта. Поиск в интернете включён.</p>
+          </div>
+          <div className="mx-auto w-full max-w-md px-4">
+            <AgentCards agent={agent} onChange={setAgent} compact />
+            {caps && !caps.available && <div className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{AGENT_NAME[agent]} недоступен: {caps.error}</div>}
+          </div>
+          {!isMobile && composer}
+        </div>
+      </div>
+      {isMobile && (
+        <div className="pb-safe shrink-0 pt-2">
+          {composer}
+          <div className="h-2" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; initialAgent?: AgentKind }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [cwd, setCwd] = useState(initialCwd ?? '');
   const [agent, setAgent] = useState<AgentKind>(initialAgent ?? ((typeof window !== 'undefined' && (localStorage.getItem('lastAgent') as AgentKind)) || 'claude'));
   const [settings, setSettings] = useState<ChatSettings>({});
   const [sending, setSending] = useState(false);
-  const limits = useStore((s) => s.limits);
   const caps = useCaps(agent, cwd || HOME);
 
   useEffect(() => {
@@ -178,24 +300,7 @@ export function NewChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
             <p className="text-sm text-muted-foreground">Сессии те же, что в терминале: их видят `claude --resume` и `codex resume`.</p>
           </div>
           <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              {(['claude', 'codex'] as AgentKind[]).map((a) => (
-                <button
-                  key={a}
-                  type="button"
-                  onClick={() => setAgent(a)}
-                  className={cn('flex h-14 items-center gap-2.5 rounded-xl border px-3 text-left transition-colors', agent === a ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50')}
-                >
-                  <AgentMark agent={a} className="size-6 text-xs" />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{AGENT_NAME[a]}</span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      <LimitsInline limits={limits} agent={a} />
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
+            <AgentCards agent={agent} onChange={setAgent} />
             <ProjectPicker value={cwd} onChange={setCwd} projects={projects} />
             {caps && !caps.available && <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{AGENT_NAME[agent]} недоступен: {caps.error}</div>}
           </div>

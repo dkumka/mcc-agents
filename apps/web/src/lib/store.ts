@@ -7,6 +7,7 @@ import type {
   AgentLimits,
   ApprovalDecision,
   ChatItem,
+  ChatMode,
   ChatSettings,
   ChatState,
   ChatSummary,
@@ -17,7 +18,20 @@ import type {
   ServerMessage,
 } from '@mcc-agents/protocol';
 
-export type Route = { kind: 'chat'; chatId: string } | { kind: 'new'; cwd?: string; agent?: AgentKind } | { kind: 'home' };
+export type Route = { kind: 'chat'; chatId: string } | { kind: 'new'; cwd?: string; agent?: AgentKind; mode?: ChatMode } | { kind: 'home' };
+
+/** Last mode the user was in ("Чат" / "Код"): used when the route itself doesn't say. */
+function storedMode(): ChatMode {
+  if (typeof window === 'undefined') return 'code';
+  return localStorage.getItem('mode') === 'chat' ? 'chat' : 'code';
+}
+
+/** Mode of what is on screen: the open chat's own mode, or the one in the address. */
+export function modeOf(s: { route: Route; chats: Record<string, ChatSummary>; mode: ChatMode }): ChatMode {
+  if (s.route.kind === 'chat') return s.chats[s.route.chatId]?.mode ?? s.mode;
+  if (s.route.kind === 'new' && s.route.mode) return s.route.mode;
+  return s.mode;
+}
 
 interface State {
   connected: boolean;
@@ -27,6 +41,8 @@ interface State {
   states: Record<string, ChatState>;
   route: Route;
   prefs: PrefsState | null;
+  /** Remembered mode; what is shown is modeOf(state). */
+  mode: ChatMode;
 }
 
 type Listener = () => void;
@@ -36,7 +52,10 @@ function routeFromUrl(): Route {
   const u = new URL(window.location.href);
   const chat = u.searchParams.get('chat');
   if (chat) return { kind: 'chat', chatId: chat };
-  if (u.searchParams.has('new')) return { kind: 'new', cwd: u.searchParams.get('cwd') ?? undefined, agent: (u.searchParams.get('agent') as AgentKind) ?? undefined };
+  const mode = u.searchParams.get('mode');
+  const m = mode === 'chat' || mode === 'code' ? mode : undefined;
+  if (u.searchParams.has('new') || m)
+    return { kind: 'new', cwd: u.searchParams.get('cwd') ?? undefined, agent: (u.searchParams.get('agent') as AgentKind) ?? undefined, mode: m };
   return { kind: 'home' };
 }
 
@@ -44,6 +63,7 @@ function urlFor(r: Route): string {
   if (r.kind === 'chat') return `/?chat=${encodeURIComponent(r.chatId)}`;
   if (r.kind === 'new') {
     const p = new URLSearchParams({ new: '1' });
+    if (r.mode) p.set('mode', r.mode);
     if (r.cwd) p.set('cwd', r.cwd);
     if (r.agent) p.set('agent', r.agent);
     return `/?${p}`;
@@ -52,7 +72,7 @@ function urlFor(r: Route): string {
 }
 
 class Store {
-  state: State = { connected: false, everConnected: false, chats: {}, limits: [], states: {}, route: { kind: 'home' }, prefs: null };
+  state: State = { connected: false, everConnected: false, chats: {}, limits: [], states: {}, route: { kind: 'home' }, prefs: null, mode: 'code' };
   private listeners = new Set<Listener>();
   private ws: WebSocket | null = null;
   private retry = 500;
@@ -78,6 +98,7 @@ class Store {
   start() {
     if (this.started || typeof window === 'undefined') return;
     this.started = true;
+    this.set({ mode: storedMode() });
     this.applyRoute(routeFromUrl(), false);
     window.addEventListener('popstate', () => this.applyRoute(routeFromUrl(), false));
     document.addEventListener('visibilitychange', () => this.sendVisible());
@@ -98,8 +119,41 @@ class Store {
     const prev = this.state.route;
     if (prev.kind === 'chat' && (r.kind !== 'chat' || r.chatId !== prev.chatId)) this.unsubscribeChat(prev.chatId);
     this.set({ route: r });
-    if (r.kind === 'chat') this.subscribeChat(r.chatId);
+    this.rememberMode();
+    if (r.kind === 'chat') {
+      this.subscribeChat(r.chatId);
+      this.lastChat[this.state.chats[r.chatId]?.mode ?? this.state.mode] = r.chatId;
+    }
     this.sendVisible();
+  }
+
+  private lastChat: Partial<Record<ChatMode, string>> = {};
+
+  /** The open chat's mode became known (list arrived after the page opened on ?chat=…). */
+  private syncOpenChatMode() {
+    const r = this.state.route;
+    if (r.kind !== 'chat') return;
+    const m = this.state.chats[r.chatId]?.mode;
+    if (!m) return;
+    this.lastChat[m] = r.chatId;
+    this.rememberMode();
+  }
+
+  private rememberMode() {
+    const m = modeOf(this.state);
+    if (m !== this.state.mode) {
+      this.set({ mode: m });
+      localStorage.setItem('mode', m);
+    }
+  }
+
+  /** "Чат | Код" switch: back to the chat last open in that mode, or a new one. */
+  switchMode(m: ChatMode) {
+    localStorage.setItem('mode', m);
+    this.set({ mode: m });
+    const last = this.lastChat[m];
+    if (last && this.state.chats[last]) this.navigate({ kind: 'chat', chatId: last });
+    else this.navigate({ kind: 'new', mode: m });
   }
 
   private sendVisible() {
@@ -165,12 +219,14 @@ class Store {
         const chats: Record<string, ChatSummary> = {};
         for (const c of m.chats) chats[c.id] = c;
         this.set({ chats });
+        this.syncOpenChatMode();
         return;
       }
       case 'chat': {
         this.set({ chats: { ...this.state.chats, [m.chat.id]: m.chat } });
         const st = this.state.states[m.chat.id];
         if (st) this.setChatState(m.chat.id, { ...st, summary: m.chat });
+        if (this.state.route.kind === 'chat' && this.state.route.chatId === m.chat.id) this.syncOpenChatMode();
         return;
       }
       case 'chatRemoved': {
@@ -289,10 +345,10 @@ class Store {
     }
   }
 
-  create(agent: AgentKind, cwd: string, settings: ChatSettings, message: SendPayload): Promise<string> {
+  create(agent: AgentKind, cwd: string, settings: ChatSettings, message: SendPayload, mode: ChatMode = 'code'): Promise<string> {
     const reqId = Math.random().toString(36).slice(2);
     return new Promise((resolve, reject) => {
-      if (!this.send({ t: 'create', reqId, agent, cwd, settings, message })) return reject(new Error('Нет соединения с сервером'));
+      if (!this.send({ t: 'create', reqId, agent, cwd, settings, message, mode })) return reject(new Error('Нет соединения с сервером'));
       const timer = setTimeout(() => {
         this.waitingCreate.delete(reqId);
         reject(new Error('Сервер не ответил'));

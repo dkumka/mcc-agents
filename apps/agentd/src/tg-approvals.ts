@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { Approval, ApprovalDecision, FileDiff } from '@mcc-agents/protocol';
 import type { Chat } from './chat.ts';
+import { isChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
 import { store } from './store.ts';
@@ -118,7 +119,8 @@ export class TgApprovals {
     const head = a.kind === 'question' ? 'задаёт вопрос' : a.kind === 'plan' ? 'предлагает план' : 'просит разрешения';
     parts.push(`✋ <b>${AGENT[s.agent] ?? s.agent}</b> ${head}`);
     parts.push(`💬 <i>${h(trim(s.title, 120))}</i>`);
-    parts.push(`📁 ${h(path.basename(s.cwd) || s.cwd)} <code>${h(s.cwd.replace(config.home, '~'))}</code>`);
+    if (isChatDir(s.cwd)) parts.push('💭 беседа');
+    else parts.push(`📁 ${h(path.basename(s.cwd) || s.cwd)} <code>${h(s.cwd.replace(config.home, '~'))}</code>`);
     parts.push('');
     const rows: TgButton[][] = [];
     const cb = (act: string) => `a:${key}:${act}`;

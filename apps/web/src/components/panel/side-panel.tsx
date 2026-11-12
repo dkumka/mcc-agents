@@ -243,7 +243,7 @@ export function SidePanel({ tab, state, onClose }: { tab: PanelTab; state: ChatS
         <div className="flex h-12 w-full items-center gap-2">
           <Tabs value={tab} onValueChange={(v) => ui.set({ panel: v as PanelTab })} className="min-w-0 flex-1">
             <TabsList className="h-9">
-              <TabsTrigger value="changes" className="px-2.5 text-xs">Изменения</TabsTrigger>
+              {state.summary.mode !== 'chat' && <TabsTrigger value="changes" className="px-2.5 text-xs">Изменения</TabsTrigger>}
               <TabsTrigger value="files" className="px-2.5 text-xs">Файлы</TabsTrigger>
               <TabsTrigger value="tasks" className="px-2.5 text-xs">
                 Задачи{state.tasks.some((t) => t.status === 'running') ? ' •' : ''}
@@ -268,7 +268,7 @@ export function SidePanel({ tab, state, onClose }: { tab: PanelTab; state: ChatS
         </div>
       </div>
       <div className="pb-safe scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-        {tab === 'changes' && <Changes cwd={cwd} wrap={wrap} />}
+        {tab === 'changes' && (state.summary.mode === 'chat' ? <Files cwd={cwd} wrap={wrap} /> : <Changes cwd={cwd} wrap={wrap} />)}
         {tab === 'files' && <Files cwd={cwd} wrap={wrap} />}
         {tab === 'tasks' && <Tasks state={state} />}
       </div>

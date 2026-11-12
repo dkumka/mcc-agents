@@ -5,12 +5,18 @@ import { Hub } from './hub.ts';
 import { logger } from './log.ts';
 import { startServer } from './server.ts';
 import { flushStore, loadStore } from './store.ts';
+import { ensureChatRoot } from './chat-dirs.ts';
 import { UPLOADS_DIR } from './uploads.ts';
 
 const log = logger('agentd');
 
 loadStore();
 fs.mkdirSync(UPLOADS_DIR, { recursive: true, mode: 0o700 });
+try {
+  ensureChatRoot();
+} catch (e) {
+  console.error('chat root', e);
+}
 const hub = new Hub();
 const claude = new ClaudeAdapter(hub);
 const codex = new CodexAdapter(hub);

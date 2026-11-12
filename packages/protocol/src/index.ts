@@ -24,7 +24,11 @@ export interface ChatSummary {
   pinned?: boolean;
   unread?: boolean;
   model?: string;
+  /** 'chat' — a conversation outside projects (folder ~/chat/<date-id>), 'code' — work in a project. */
+  mode?: ChatMode;
 }
+
+export type ChatMode = 'chat' | 'code';
 
 export interface ProjectInfo {
   path: string;
@@ -303,7 +307,9 @@ export type ClientMessage =
       t: 'create';
       reqId: string;
       agent: AgentKind;
+      /** Ignored for mode 'chat': the server makes a fresh folder under ~/chat. */
       cwd: string;
+      mode?: ChatMode;
       settings: ChatSettings;
       message: SendPayload;
     }

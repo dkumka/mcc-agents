@@ -17,6 +17,8 @@ export const config = {
   claudeBin: process.env.CLAUDE_BIN ?? 'claude',
   codexBin: process.env.CODEX_BIN ?? 'codex',
   claudeProjects: path.join(home, '.claude/projects'),
+  /** Conversations outside projects ("Чат" mode): one folder per chat inside. */
+  chatRoot: process.env.AGENTD_CHAT_ROOT ?? path.join(home, 'chat'),
   /** Folders whose sub-folders are offered as projects. */
   projectRoots: (process.env.AGENTD_PROJECT_ROOTS ?? path.join(home, 'dev')).split(':'),
   /** Close an idle Claude process after this long (no turn, no approvals, no background tasks). */
