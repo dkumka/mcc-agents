@@ -1,0 +1,19 @@
+# mcc agents — веб-интерфейс (Next.js, боевая сборка `next build`), только 127.0.0.1:3110.
+# Сам ничего не умеет: всё действие — в mcc-agentd (nginx шлёт /api и /ws туда). Перезапуск безопасен.
+[Unit]
+Description=mcc agents web UI (Next.js)
+After=network.target mcc-agentd.service
+
+[Service]
+Type=simple
+User=serzhb
+Group=serzhb
+WorkingDirectory=/home/serzhb/dev/mcc-agents/apps/web
+Environment=HOME=/home/serzhb LANG=C.UTF-8 NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+Environment=PATH=/home/serzhb/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/serzhb/dev/mcc-agents/node_modules/.bin/next start -H 127.0.0.1 -p 3110
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

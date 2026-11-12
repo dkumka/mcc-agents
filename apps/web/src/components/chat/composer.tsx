@@ -1,0 +1,419 @@
+'use client';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, CpuIcon, FileIcon, ImagePlusIcon, ShieldIcon, SlashIcon, SquareIcon, XIcon } from 'lucide-react';
+import type { AgentCapabilities, ChatSettings, SendPayload } from '@mcc-agents/protocol';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { api } from '@/lib/api';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
+
+type Img = { mediaType: string; data: string; name: string; preview: string };
+
+/** Downscale big photos (phone camera) before sending: max 2000px, JPEG 0.85. */
+async function prepareImage(file: File): Promise<Img> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = url;
+    });
+    const max = 2000;
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const keep = scale === 1 && file.size < 3_000_000 && /png|jpeg|webp|gif/.test(file.type);
+    if (keep) {
+      const data = await new Promise<string>((res) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(',')[1]);
+        r.readAsDataURL(file);
+      });
+      return { mediaType: file.type, data, name: file.name, preview: `data:${file.type};base64,${data}` };
+    }
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * scale);
+    c.height = Math.round(img.height * scale);
+    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL('image/jpeg', 0.85);
+    return { mediaType: 'image/jpeg', data: dataUrl.split(',')[1], name: file.name || 'image.jpg', preview: dataUrl };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+type Popup = { kind: 'slash'; query: string } | { kind: 'mention'; query: string; start: number } | null;
+
+function detectPopup(text: string, caret: number): Popup {
+  const before = text.slice(0, caret);
+  if (/^\/[\w:-]*$/.test(before)) return { kind: 'slash', query: before.slice(1) };
+  const m = before.match(/(^|\s)@([^\s@]*)$/);
+  if (m) return { kind: 'mention', query: m[2], start: caret - m[2].length - 1 };
+  return null;
+}
+
+const EFFORT_LABEL: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', xhigh: 'Очень высокий', max: 'Максимум', ultra: 'Ультра', minimal: 'Минимальный' };
+
+function Chip({ icon: Icon, children, className, ...p }: React.ComponentProps<'button'> & { icon: typeof CpuIcon }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted',
+        className,
+      )}
+      {...p}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate">{children}</span>
+      <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
+    </button>
+  );
+}
+
+export function SettingsChips({ caps, settings, onChange }: { caps: AgentCapabilities | null; settings: ChatSettings; onChange: (s: ChatSettings) => void }) {
+  const models = caps?.models ?? [];
+  const model = models.find((m) => m.id === settings.model) ?? models.find((m) => settings.model && settings.model.includes(m.id)) ?? models.find((m) => m.isDefault);
+  const efforts = model?.efforts ?? [];
+  const modes = caps?.permissionModes ?? [];
+  const mode = modes.find((m) => m.id === (settings.permissionMode ?? caps?.defaults.permissionMode));
+  const effort = settings.effort ?? model?.defaultEffort ?? caps?.defaults.effort;
+  const modelLabel = model?.label ?? settings.model ?? 'Модель';
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Chip icon={CpuIcon}>{modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1')}</Chip>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
+          <DropdownMenuLabel>Модель</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={model?.id ?? ''} onValueChange={(v) => onChange({ model: v })}>
+            {models.map((m) => (
+              <DropdownMenuRadioItem key={m.id} value={m.id} className="py-2">
+                <div className="min-w-0">
+                  <div className="text-sm">{m.label}</div>
+                  {m.description && <div className="truncate text-xs text-muted-foreground">{m.description}</div>}
+                </div>
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {efforts.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Chip icon={BrainIcon}>{effort ? EFFORT_LABEL[effort] ?? effort : 'Авто'}</Chip>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuLabel>Глубина размышлений</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={effort ?? ''} onValueChange={(v) => onChange({ effort: v })}>
+              {efforts.map((e) => (
+                <DropdownMenuRadioItem key={e} value={e} className="py-2">
+                  {EFFORT_LABEL[e] ?? e}
+                  {model?.defaultEffort === e && <span className="ml-auto text-xs text-muted-foreground">по умолч.</span>}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {modes.length > 0 && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Chip icon={ShieldIcon} className={cn(settings.permissionMode === 'bypassPermissions' || settings.permissionMode === 'never' ? 'text-warning' : '')}>
+              {mode?.label ?? 'Режим'}
+            </Chip>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72">
+            <DropdownMenuLabel>Подтверждения</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup value={mode?.id ?? ''} onValueChange={(v) => onChange({ permissionMode: v })}>
+              {modes.map((m) => (
+                <DropdownMenuRadioItem key={m.id} value={m.id} className="py-2">
+                  <div>
+                    <div className="text-sm">{m.label}</div>
+                    <div className="text-xs text-muted-foreground">{m.description}</div>
+                  </div>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </>
+  );
+}
+
+export function Composer({
+  draftKey,
+  cwd,
+  caps,
+  settings,
+  onSettings,
+  busy,
+  onSend,
+  onStop,
+  placeholder,
+  autoFocus,
+  sending,
+}: {
+  draftKey: string;
+  cwd: string;
+  caps: AgentCapabilities | null;
+  settings: ChatSettings;
+  onSettings: (s: ChatSettings) => void;
+  busy: boolean;
+  onSend: (p: SendPayload) => void | Promise<void>;
+  onStop?: () => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  sending?: boolean;
+}) {
+  const [text, setText] = useState('');
+  const [images, setImages] = useState<Img[]>([]);
+  const [popup, setPopup] = useState<Popup>(null);
+  const [sel, setSel] = useState(0);
+  const [files, setFiles] = useState<string[]>([]);
+  const ta = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
+
+  // drafts survive reloads and chat switches
+  useEffect(() => {
+    setText(localStorage.getItem(`draft:${draftKey}`) ?? '');
+    setImages([]);
+  }, [draftKey]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (text) localStorage.setItem(`draft:${draftKey}`, text);
+      else localStorage.removeItem(`draft:${draftKey}`);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [text, draftKey]);
+
+  // auto-grow
+  useEffect(() => {
+    const el = ta.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
+  }, [text]);
+
+  useEffect(() => {
+    // never pop the keyboard by itself on touch devices
+    if (autoFocus && !window.matchMedia('(pointer: coarse)').matches) ta.current?.focus();
+  }, [autoFocus, draftKey]);
+
+  // @-mention file search
+  useEffect(() => {
+    if (popup?.kind !== 'mention') return;
+    let off = false;
+    const t = setTimeout(() => {
+      api
+        .files(cwd, popup.query)
+        .then((f) => !off && setFiles(f.slice(0, 30)))
+        .catch(() => !off && setFiles([]));
+    }, 120);
+    return () => {
+      off = true;
+      clearTimeout(t);
+    };
+  }, [popup, cwd]);
+
+  const commands = useMemo(() => {
+    if (popup?.kind !== 'slash') return [];
+    const q = popup.query.toLowerCase();
+    return (caps?.commands ?? []).filter((c) => c.name.toLowerCase().includes(q)).slice(0, 40);
+  }, [popup, caps]);
+
+  const options: { key: string; label: string; hint?: string; apply: () => void }[] =
+    popup?.kind === 'slash'
+      ? commands.map((c) => ({
+          key: c.name,
+          label: `/${c.name}`,
+          hint: c.description,
+          apply: () => {
+            setText(`/${c.name} `);
+            setPopup(null);
+          },
+        }))
+      : popup?.kind === 'mention'
+        ? files.map((f) => ({
+            key: f,
+            label: f,
+            apply: () => {
+              const caret = ta.current?.selectionStart ?? text.length;
+              const next = text.slice(0, popup.start) + '@' + f + ' ' + text.slice(caret);
+              setText(next);
+              setPopup(null);
+              requestAnimationFrame(() => {
+                const pos = popup.start + f.length + 2;
+                ta.current?.setSelectionRange(pos, pos);
+                ta.current?.focus();
+              });
+            },
+          }))
+        : [];
+
+  useEffect(() => setSel(0), [popup?.kind, popup?.query]);
+
+  const canSend = (text.trim().length > 0 || images.length > 0) && !sending;
+
+  const submit = async () => {
+    if (!canSend) return;
+    const payload: SendPayload = { text: text.trim(), images: images.map(({ mediaType, data, name }) => ({ mediaType, data, name })) };
+    setText('');
+    setImages([]);
+    setPopup(null);
+    localStorage.removeItem(`draft:${draftKey}`);
+    try {
+      await onSend(payload);
+    } catch {
+      setText(payload.text);
+    }
+  };
+
+  const addFiles = async (list: FileList | File[]) => {
+    const imgs = await Promise.all(
+      [...list]
+        .filter((f) => f.type.startsWith('image/'))
+        .slice(0, 6)
+        .map(prepareImage),
+    );
+    setImages((cur) => [...cur, ...imgs].slice(0, 8));
+  };
+
+  return (
+    <div className="relative mx-auto w-full max-w-3xl px-3 md:px-6">
+      {popup && options.length > 0 && (
+        <div className="absolute inset-x-3 bottom-full z-30 mb-2 overflow-hidden rounded-xl border bg-popover shadow-xl md:inset-x-6">
+          <div className="flex items-center gap-1.5 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
+            {popup.kind === 'slash' ? <SlashIcon className="size-3" /> : <FileIcon className="size-3" />}
+            {popup.kind === 'slash' ? 'Команды и skills' : 'Файлы проекта'}
+          </div>
+          <div className="scrollbar-thin max-h-64 overflow-y-auto py-1">
+            {options.map((o, i) => (
+              <button
+                key={o.key}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={o.apply}
+                className={cn('flex w-full min-w-0 items-baseline gap-2 px-3 py-2 text-left text-sm', i === sel ? 'bg-muted' : 'hover:bg-muted/60')}
+              >
+                <span className="shrink-0 font-mono text-[13px]">{o.label}</span>
+                {o.hint && <span className="min-w-0 truncate text-xs text-muted-foreground">{o.hint}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div
+        className="rounded-2xl border bg-card shadow-sm transition-colors focus-within:border-ring/70"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+        }}
+      >
+        {images.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto px-3 pt-3">
+            {images.map((im, i) => (
+              <div key={i} className="relative shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={im.preview} alt={im.name} className="size-16 rounded-lg border object-cover" />
+                <button
+                  type="button"
+                  aria-label="Убрать"
+                  onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))}
+                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-foreground text-background"
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <textarea
+          ref={ta}
+          value={text}
+          rows={1}
+          placeholder={placeholder ?? 'Сообщение… / — команды, @ — файлы'}
+          enterKeyHint={isMobile ? 'enter' : 'send'}
+          onChange={(e) => {
+            setText(e.target.value);
+            setPopup(detectPopup(e.target.value, e.target.selectionStart ?? e.target.value.length));
+          }}
+          onKeyDown={(e) => {
+            if (popup && options.length) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSel((s) => (s + 1) % options.length);
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSel((s) => (s - 1 + options.length) % options.length);
+                return;
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                options[sel]?.apply();
+                return;
+              }
+              if (e.key === 'Escape') {
+                setPopup(null);
+                return;
+              }
+            }
+            if (e.key === 'Escape' && busy && onStop) {
+              e.preventDefault();
+              onStop();
+              return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !isMobile && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          onPaste={(e) => {
+            const fl = [...e.clipboardData.files];
+            if (fl.some((f) => f.type.startsWith('image/'))) {
+              e.preventDefault();
+              addFiles(fl);
+            }
+          }}
+          onBlur={() => setTimeout(() => setPopup(null), 150)}
+          className="block max-h-[40vh] min-h-[44px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-base leading-relaxed outline-none placeholder:text-muted-foreground md:text-sm"
+        />
+        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+          <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => fileInput.current?.click()} aria-label="Прикрепить изображение">
+            <ImagePlusIcon className="size-4" />
+          </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files) addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-20px),transparent)]">
+            <SettingsChips caps={caps} settings={settings} onChange={onSettings} />
+          </div>
+          {busy && onStop && (
+            <Button type="button" variant="secondary" size="icon" className="size-9 shrink-0 rounded-full" onClick={onStop} aria-label="Остановить">
+              <SquareIcon className="size-3.5 fill-current" />
+            </Button>
+          )}
+          <Button type="button" size="icon" className="size-9 shrink-0 rounded-full" disabled={!canSend} onClick={submit} aria-label={busy ? 'Отправить в очередь' : 'Отправить'}>
+            {sending ? <CheckIcon className="size-4 animate-pulse" /> : <ArrowUpIcon className="size-4" />}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

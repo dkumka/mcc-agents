@@ -1,0 +1,20 @@
+{
+  "name": "@mcc-agents/agentd",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Daemon that runs claude / codex CLIs and streams their events to the web UI",
+  "scripts": {
+    "start": "node src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@mcc-agents/protocol": "*",
+    "@types/node": "^24",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3"
+  }
+}
