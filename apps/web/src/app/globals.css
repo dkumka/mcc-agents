@@ -156,6 +156,8 @@
 @layer utilities {
   .app-h {
     height: var(--app-h, 100dvh);
+    /* iOS may pan the visual viewport to reveal the focused field — follow it (hooks/use-app-viewport.ts) */
+    transform: translateY(var(--app-top, 0px));
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top);

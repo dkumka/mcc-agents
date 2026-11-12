@@ -84,6 +84,20 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </section>
 
         <section className="space-y-2">
+          <h3 className="text-sm font-medium">Диагностика</h3>
+          <Button
+            variant="outline"
+            className="h-11 w-full"
+            onClick={() => {
+              localStorage.setItem('mccDebug', localStorage.getItem('mccDebug') === '1' ? '0' : '1');
+              window.location.reload();
+            }}
+          >
+            Показать / скрыть размеры экрана
+          </Button>
+        </section>
+
+        <section className="space-y-2">
           <h3 className="text-sm font-medium">Вход</h3>
           <Button variant="outline" className="h-11 w-full" asChild>
             <a href="https://auth.mcc.babochkin.com/logout">

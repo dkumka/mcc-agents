@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 
-/** ?debug=1 — show viewport / safe-area numbers (for tuning the iOS home-screen app). */
+/** ?debug=1 or Settings → «Диагностика экрана» — viewport / safe-area / keyboard numbers (for the iOS home-screen app). */
 export function DebugOverlay() {
   const [text, setText] = useState('');
   useEffect(() => {
-    if (!new URLSearchParams(window.location.search).has('debug')) return;
+    if (!new URLSearchParams(window.location.search).has('debug') && localStorage.getItem('mccDebug') !== '1') return;
     const probe = document.createElement('div');
     probe.style.cssText =
       'position:fixed;top:0;left:0;width:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);visibility:hidden';
@@ -29,12 +29,13 @@ export function DebugOverlay() {
           `inner=${window.innerWidth}x${window.innerHeight} screen=${screen.width}x${screen.height}`,
           `vv=${vv ? `${Math.round(vv.width)}x${Math.round(vv.height)} top=${Math.round(vv.offsetTop)}` : '-'} scrollY=${window.scrollY}`,
           `header top=${header ? Math.round(header.getBoundingClientRect().top) : '-'} h=${header ? Math.round(header.getBoundingClientRect().height) : '-'}`,
+          `kb=${document.documentElement.dataset.keyboard} app-h=${getComputedStyle(document.documentElement).getPropertyValue('--app-h')} app-top=${getComputedStyle(document.documentElement).getPropertyValue('--app-top')} focus=${document.activeElement?.tagName}`,
           Object.entries(probes).map(([k, d]) => `${k}=${Math.round(d.getBoundingClientRect().height)}`).join(' ') + ` client=${document.documentElement.clientHeight}`,
         ].join('\n'),
       );
     };
     tick();
-    const t = setInterval(tick, 1000);
+    const t = setInterval(tick, 300);
     return () => {
       clearInterval(t);
       probe.remove();
@@ -43,6 +44,6 @@ export function DebugOverlay() {
   }, []);
   if (!text) return null;
   return (
-    <pre className="pointer-events-none fixed inset-x-2 top-1/3 z-[100] whitespace-pre-wrap rounded-lg bg-black/80 p-3 font-mono text-[11px] text-green-300">{text}</pre>
+    <pre className="pointer-events-none fixed inset-x-2 top-24 z-[100] whitespace-pre-wrap rounded-lg bg-black/80 p-3 font-mono text-[11px] text-green-300">{text}</pre>
   );
 }
