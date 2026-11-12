@@ -16,7 +16,7 @@ import {
   TriangleAlertIcon,
 } from 'lucide-react';
 import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/protocol';
-import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
+import { AgentMark } from '@/components/agent-badge';
 import { copyText } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -208,7 +208,7 @@ export function ChatView({ chatId }: { chatId: string }) {
           busy={busy}
           onSend={onSend}
           onStop={() => store.interrupt(chatId)}
-          placeholder={busy ? `${AGENT_NAME[s.agent]} работает — сообщение встанет в очередь` : undefined}
+          placeholder={busy ? 'Добавить в очередь…' : undefined}
           autoFocus
         />
         <StatusBar usage={state.usage} limits={limits} agent={s.agent} tasks={state.tasks} />

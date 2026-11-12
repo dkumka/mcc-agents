@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Обновить mcc agents НА СЕРВЕРЕ: git → npm install → next build → перезапуск веб-интерфейса.
 #   scripts/deploy.sh            — подтянуть origin/main, собрать и перезапустить веб (безопасно)
-#   scripts/deploy.sh --local    — собрать то, что лежит в папке сейчас (после scripts/sync.sh с Mac), без git
+#   scripts/deploy.sh --local    — собрать то, что лежит в папке сейчас (после scripts/sync.sh с Mac), без git;
+#                                  демон при этом перезапускается только с --agentd
 #   scripts/deploy.sh --agentd   — плюс перезапустить демон. Демон перезапускается и сам, если менялись
 #                                  apps/agentd или packages/protocol. Перезапуск ОБРЫВАЕТ идущие задачи агентов,
 #                                  поэтому при занятых чатах скрипт откажется без --force.
@@ -53,7 +54,7 @@ npm run build -w apps/web
 echo "→ restart mcc-agents-web"
 sudo systemctl restart mcc-agents-web
 
-if [[ $AGENTD == 1 ]] || changed apps/agentd packages/protocol; then
+if [[ $AGENTD == 1 ]] || { [[ $LOCAL == 0 ]] && changed apps/agentd packages/protocol; }; then
   busy=$(curl -s --unix-socket /run/mcc-agents/local.sock http://x/api/health | sed -n 's/.*"busy":\([0-9]*\).*/\1/p')
   if [[ ${busy:-0} != 0 && $FORCE == 0 ]]; then
     echo "⚠ Демон не перезапущен: сейчас работают чаты ($busy). Повторите позже или с --force (оборвёт их)." >&2

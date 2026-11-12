@@ -41,7 +41,12 @@ function ProjectPicker({ value, onChange, projects }: { value: string; onChange:
           <ChevronsUpDownIcon className="size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(32rem,calc(100vw-1.5rem))] p-0" align="start">
+      <PopoverContent
+        className="w-[min(32rem,calc(100vw-1.5rem))] p-0"
+        align="start"
+        // on phones the search field would pop the keyboard over the list
+        onOpenAutoFocus={(e) => window.matchMedia('(pointer: coarse)').matches && e.preventDefault()}
+      >
         <Command>
           <CommandInput value={q} onValueChange={setQ} placeholder="Поиск или путь: ~/dev/…" className="h-11" />
           <CommandList className="max-h-[50vh]">
