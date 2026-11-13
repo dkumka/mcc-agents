@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CheckCircle2Icon, CircleAlertIcon, LogOutIcon, MoonIcon, PaperclipIcon, SunIcon } from 'lucide-react';
+import { ArrowUpIcon, CheckCircle2Icon, CircleAlertIcon, LogOutIcon, MicIcon, MoonIcon, PaperclipIcon, PencilLineIcon, SunIcon } from 'lucide-react';
+import { DEFAULT_VOICE_MODEL, VOICE_MODELS } from '@mcc-agents/protocol';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -74,6 +75,50 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 <li>Откройте нового бота и нажмите «Start». Через минуту здесь станет зелёным.</li>
               </ol>
               <p className="text-muted-foreground">Пока бот не подключён, приходит обычное уведомление без кнопок от бота сервера.</p>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-2">
+          <h3 className="flex items-center gap-1.5 text-sm font-medium">
+            <MicIcon className="size-4 text-muted-foreground" /> Голосовой ввод
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Кнопка 🎤 в поле ввода: говорите, нажмите ещё раз — запись распознаётся через OpenRouter (серверный ключ). Русский с английскими словами
+            понимают все четыре модели.
+          </p>
+          <Select value={prefs?.voiceModel ?? DEFAULT_VOICE_MODEL} onValueChange={(v) => store.setPrefs({ voiceModel: v })}>
+            <SelectTrigger className="h-auto min-h-11 w-full py-2 text-left">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VOICE_MODELS.map((m) => (
+                <SelectItem key={m.id} value={m.id} className="py-2">
+                  <div className="min-w-0">
+                    <div className="text-sm">{m.label}</div>
+                    <div className="text-xs text-muted-foreground">{m.description}</div>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant={!prefs?.voiceAutoSend ? 'default' : 'outline'} className="h-auto min-h-11 whitespace-normal py-2" onClick={() => store.setPrefs({ voiceAutoSend: false })}>
+              <PencilLineIcon /> Текст в поле
+            </Button>
+            <Button variant={prefs?.voiceAutoSend ? 'default' : 'outline'} className="h-auto min-h-11 whitespace-normal py-2" onClick={() => store.setPrefs({ voiceAutoSend: true })}>
+              <ArrowUpIcon /> Отправлять сразу
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {prefs?.voiceAutoSend
+              ? 'Распознанный текст сразу уходит агенту — без клавиатуры.'
+              : 'Распознанный текст появляется в поле: можно поправить и отправить.'}{' '}
+            Запись — до 5 минут, на сервере не сохраняется.
+          </p>
+          {prefs && !prefs.voiceReady && (
+            <div className="flex items-center gap-2 text-xs text-warning">
+              <CircleAlertIcon className="size-3.5" /> Нет ключа OpenRouter на сервере: <code>secret-set openrouter</code>
             </div>
           )}
         </section>

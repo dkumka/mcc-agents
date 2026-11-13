@@ -283,11 +283,33 @@ export interface AgentCapabilities {
 export interface Prefs {
   /** Send an unanswered approval / question to Telegram after this many seconds (0 = off). */
   telegramDelaySec: number;
+  /** Speech-to-text model on OpenRouter (one of VOICE_MODELS). */
+  voiceModel: string;
+  /** Send the message right after the dictation is transcribed (no keyboard at all). */
+  voiceAutoSend: boolean;
 }
 
 export interface PrefsState extends Prefs {
   /** The agents' Telegram bot is configured (~/secrets/agents-telegram.env). */
   telegramReady: boolean;
+  /** OpenRouter key is present (~/secrets/openrouter.env) — voice input works. */
+  voiceReady: boolean;
+}
+
+/** Speech-to-text models for voice input (OpenRouter /audio/transcriptions). Prices — OpenRouter, Nov 2026. */
+export const VOICE_MODELS: { id: string; label: string; description: string }[] = [
+  { id: 'microsoft/mai-transcribe-2', label: 'Microsoft MAI-Transcribe 2', description: 'Смешанная речь (ru + en) · ≈ $0,10 / час' },
+  { id: 'openai/gpt-transcribe', label: 'OpenAI GPT Transcribe', description: 'Подсказка языков ru и en · ≈ $0,27 / час' },
+  { id: 'elevenlabs/scribe-v2', label: 'ElevenLabs Scribe v2', description: 'Сильный русский · ≈ $0,22 / час' },
+  { id: 'openai/whisper-large-v3', label: 'OpenAI Whisper Large v3', description: 'Дешёвый · ≈ $0,03 / час' },
+];
+export const DEFAULT_VOICE_MODEL = VOICE_MODELS[0].id;
+
+/** POST /api/transcribe response. */
+export interface TranscribeResult {
+  text: string;
+  model: string;
+  ms: number;
 }
 
 // ---------------------------------------------------------------- websocket

@@ -25,6 +25,8 @@ import { store } from './store.ts';
 import { TelegramBridge } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
 import { textWithFiles } from './uploads.ts';
+import { openrouterKey, voiceModel } from './voice.ts';
+import { VOICE_MODELS } from '@mcc-agents/protocol';
 
 const log = logger('hub');
 
@@ -87,7 +89,7 @@ export class Hub implements ChatSink {
   }
 
   prefsState(): PrefsState {
-    return { ...store.prefs(), telegramReady: this.tg.ready };
+    return { ...store.prefs(), voiceModel: voiceModel(), telegramReady: this.tg.ready, voiceReady: !!openrouterKey() };
   }
 
   register(a: Adapter) {
@@ -403,6 +405,11 @@ export class Hub implements ChatSink {
           if (!Number.isFinite(n) || n < 0 || n > 24 * 3600) throw new Error('неверная задержка');
           store.setPrefs({ telegramDelaySec: n });
         }
+        if (p.voiceModel !== undefined) {
+          if (!VOICE_MODELS.some((v) => v.id === p.voiceModel)) throw new Error('неизвестная модель распознавания');
+          store.setPrefs({ voiceModel: p.voiceModel });
+        }
+        if (p.voiceAutoSend !== undefined) store.setPrefs({ voiceAutoSend: !!p.voiceAutoSend });
         this.broadcast({ t: 'prefs', prefs: this.prefsState() });
         return;
       }

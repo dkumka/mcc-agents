@@ -9,6 +9,7 @@ import type { Client, Hub } from './hub.ts';
 import { logger } from './log.ts';
 import { serveRaw } from './raw.ts';
 import { handleUpload, uploadsStats } from './uploads.ts';
+import { handleTranscribe } from './voice.ts';
 
 const log = logger('server');
 let clientSeq = 0;
@@ -161,6 +162,7 @@ export function startServer(hub: Hub) {
     const srv = http.createServer((req, res) => {
       const u = req.url ?? '/';
       if (u.startsWith('/api/upload') && req.method === 'POST') return handleUpload(req, res);
+      if (u.startsWith('/api/transcribe') && req.method === 'POST') return void handleTranscribe(req, res);
       if (u.startsWith('/api/')) return void api(hub, req, res);
       if (local) return proxyHttp(req, res);
       res.writeHead(404).end();

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentLimits, ChatSettings } from '@mcc-agents/protocol';
+import type { AgentLimits, ChatSettings, Prefs } from '@mcc-agents/protocol';
 import { config } from './config.ts';
 import { logger } from './log.ts';
 
@@ -30,11 +30,6 @@ interface StoreData {
   tgMessages: Record<string, TgMessage>;
 }
 
-export interface Prefs {
-  /** Send a pending approval / question to Telegram after this many seconds without an answer (0 = off). */
-  telegramDelaySec: number;
-}
-
 export interface TgMessage {
   chatId: string;
   approvalId: string;
@@ -44,7 +39,7 @@ export interface TgMessage {
 }
 
 const file = path.join(config.dataDir, 'state.json');
-const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60 };
+const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60, voiceModel: 'microsoft/mai-transcribe-2', voiceAutoSend: false };
 let data: StoreData = { version: 1, meta: {}, limits: {}, windows: {}, lastSettings: {}, prefs: { ...DEFAULT_PREFS }, tgOffset: 0, tgMessages: {} };
 let timer: NodeJS.Timeout | null = null;
 

@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, CpuIcon, FileIcon, Loader2Icon, PaperclipIcon, ShieldIcon, SlashIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, CpuIcon, FileIcon, Loader2Icon, MicIcon, PaperclipIcon, ShieldIcon, SlashIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
+import { toast } from 'sonner';
 import type { AgentCapabilities, AttachedFile, ChatSettings, SendPayload } from '@mcc-agents/protocol';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { api, uploadFile } from '@/lib/api';
+import { dictationSupported, MAX_DICTATION_SEC, useDictation } from '@/lib/dictation';
+import { useStore } from '@/lib/store';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
@@ -156,6 +159,42 @@ export function SettingsChips({ caps, settings, onChange }: { caps: AgentCapabil
   );
 }
 
+function mmss(s: number) {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Shown in place of the settings chips while recording / transcribing. */
+function DictationBar({ state, seconds, level, onCancel }: { state: string; seconds: number; level: number; onCancel: () => void }) {
+  const bars = 14;
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite">
+      {state === 'transcribing' ? (
+        <span className="text-xs text-muted-foreground">Распознаю…</span>
+      ) : (
+        <>
+          <span className="size-2 shrink-0 animate-pulse rounded-full bg-destructive" />
+          <span className={cn('shrink-0 font-mono text-xs tabular-nums', seconds >= MAX_DICTATION_SEC - 30 ? 'text-warning' : 'text-muted-foreground')}>{mmss(seconds)}</span>
+          <span className="flex h-5 min-w-0 flex-1 items-center gap-[3px] overflow-hidden" aria-hidden>
+            {Array.from({ length: bars }, (_, i) => {
+              // a simple symmetric meter driven by the current level
+              const k = 1 - Math.abs(i - (bars - 1) / 2) / (bars / 2);
+              const h = Math.max(0.12, Math.min(1, level * (0.55 + 0.9 * k)));
+              return <span key={i} className="w-[3px] shrink-0 rounded-full bg-foreground/60 transition-[height] duration-75" style={{ height: `${Math.round(h * 100)}%` }} />;
+            })}
+          </span>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <XIcon className="size-3.5" /> Отмена
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function Composer({
   draftKey,
   cwd,
@@ -277,12 +316,13 @@ export function Composer({
   const original = (im: Img) => attachments.find((a) => a.id === im.uploadId)?.file;
   const canSend = (text.trim().length > 0 || images.length > 0 || ready.length > 0) && !sending && !uploading;
 
-  const submit = async () => {
-    if (!canSend) return;
+  const submit = async (override?: string) => {
+    const body = (override ?? text).trim();
+    if (!((body.length > 0 || images.length > 0 || ready.length > 0) && !sending && !uploading)) return;
     // pictures with a stored original first: the chat pairs originals and previews by position
     const pics = [...images].sort((a, b) => Number(!!original(b)) - Number(!!original(a)));
     const payload: SendPayload = {
-      text: text.trim(),
+      text: body,
       images: pics.map(({ mediaType, data, name }) => ({ mediaType, data, name })),
       files: [...pics.map(original).filter((f): f is AttachedFile => !!f), ...ready.map((a) => a.file!)],
     };
@@ -297,6 +337,33 @@ export function Composer({
       setText(payload.text);
     }
   };
+
+  // ---- voice input: the transcript goes where the caret is (or at the end), then — optionally — straight to the agent
+  const autoSend = useStore((s) => s.prefs?.voiceAutoSend ?? false);
+  const [canDictate, setCanDictate] = useState(false);
+  useEffect(() => setCanDictate(dictationSupported()), []);
+  const dictation = useDictation(
+    (said) => {
+      const el = ta.current;
+      const at = el && document.activeElement === el ? el.selectionStart : text.length;
+      const before = text.slice(0, at);
+      const after = text.slice(at);
+      const lead = before && !/\s$/.test(before) ? ' ' : '';
+      const trail = after && !/^\s/.test(after) ? ' ' : '';
+      const next = before + lead + said + trail + after;
+      if (autoSend && !uploading) return void submit(next);
+      setText(next);
+      // keep the keyboard closed on phones — the whole point is not to type
+      if (!window.matchMedia('(pointer: coarse)').matches)
+        requestAnimationFrame(() => {
+          const pos = (before + lead + said).length;
+          ta.current?.focus();
+          ta.current?.setSelectionRange(pos, pos);
+        });
+    },
+    (msg) => toast.error(msg),
+  );
+  const dictating = dictation.state !== 'idle';
 
   const upload = (f: File, forImage = false) => {
     const id = Math.random().toString(36).slice(2);
@@ -460,6 +527,11 @@ export function Composer({
                 return;
               }
             }
+            if (e.key === 'Escape' && dictation.state === 'recording') {
+              e.preventDefault();
+              dictation.cancel();
+              return;
+            }
             if (e.key === 'Escape' && busy && onStop) {
               e.preventDefault();
               onStop();
@@ -494,15 +566,42 @@ export function Composer({
               e.target.value = '';
             }}
           />
-          <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-20px),transparent)]">
-            <SettingsChips caps={caps} settings={settings} onChange={onSettings} />
-          </div>
+          {dictating ? (
+            <DictationBar state={dictation.state} seconds={dictation.seconds} level={dictation.level} onCancel={dictation.cancel} />
+          ) : (
+            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-20px),transparent)]">
+              <SettingsChips caps={caps} settings={settings} onChange={onSettings} />
+            </div>
+          )}
           {busy && onStop && (
             <Button type="button" variant="secondary" size="icon" className="size-9 shrink-0 rounded-full" onClick={onStop} aria-label="Остановить">
               <SquareIcon className="size-3.5 fill-current" />
             </Button>
           )}
-          <Button type="button" size="icon" className="size-9 shrink-0 rounded-full" disabled={!canSend} onClick={submit} aria-label={busy ? 'Отправить в очередь' : 'Отправить'}>
+          {canDictate && (
+            <Button
+              type="button"
+              variant={dictation.state === 'recording' ? 'default' : 'ghost'}
+              size="icon"
+              className={cn(
+                'size-9 shrink-0 rounded-full',
+                dictation.state === 'recording' ? 'bg-destructive text-white hover:bg-destructive/90' : 'text-muted-foreground',
+              )}
+              disabled={dictation.state === 'starting' || dictation.state === 'transcribing' || sending}
+              onClick={() => (dictation.state === 'recording' ? dictation.stop() : dictation.start())}
+              aria-label={dictation.state === 'recording' ? (autoSend ? 'Закончить и отправить' : 'Закончить запись') : 'Голосовой ввод'}
+              title={dictation.state === 'recording' ? (autoSend ? 'Закончить и отправить' : 'Закончить — текст появится в поле') : 'Голосовой ввод'}
+            >
+              {dictation.state === 'transcribing' || dictation.state === 'starting' ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : dictation.state === 'recording' ? (
+                autoSend ? <ArrowUpIcon className="size-4" /> : <CheckIcon className="size-4" />
+              ) : (
+                <MicIcon className="size-4" />
+              )}
+            </Button>
+          )}
+          <Button type="button" size="icon" className={cn('size-9 shrink-0 rounded-full', dictating && 'hidden')} disabled={!canSend} onClick={() => submit()} aria-label={busy ? 'Отправить в очередь' : 'Отправить'}>
             {sending ? <CheckIcon className="size-4 animate-pulse" /> : <ArrowUpIcon className="size-4" />}
           </Button>
         </div>
