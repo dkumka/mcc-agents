@@ -85,7 +85,7 @@ function Chip({ icon: Icon, children, className, compact, ...p }: React.Componen
       type="button"
       className={cn(
         'inline-flex h-8 shrink-0 items-center rounded-md text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted',
-        compact ? 'max-w-[7rem] gap-0.5 px-1.5' : 'max-w-[11rem] gap-1 px-2',
+        compact ? 'max-w-[7rem] gap-0.5 px-1' : 'max-w-[11rem] gap-1 px-2',
         className,
       )}
       {...p}
@@ -601,7 +601,7 @@ export function Composer({
           onBlur={() => setTimeout(() => setPopup(null), 150)}
           className="block max-h-[40vh] min-h-[44px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-base leading-relaxed outline-none placeholder:text-muted-foreground md:text-sm"
         />
-        <div className="flex items-center gap-1 px-1.5 pb-1.5">
+        <div className="flex items-center gap-0.5 px-1 pb-1.5 md:gap-1 md:px-1.5">
           <Button type="button" variant="ghost" size="icon" className="size-9 shrink-0 text-muted-foreground" onClick={() => fileInput.current?.click()} aria-label="Прикрепить файлы" title="Прикрепить файлы (до 50 МБ)">
             <PaperclipIcon className="size-4" />
           </Button>
@@ -618,7 +618,7 @@ export function Composer({
           {dictating ? (
             <DictationBar state={dictation.state} seconds={dictation.seconds} level={dictation.level} onCancel={dictation.cancel} />
           ) : (
-            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-14px),transparent)]">
+            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0 overflow-x-auto md:gap-0.5 [mask-image:linear-gradient(90deg,#000_calc(100%-14px),transparent)]">
               <SettingsChips caps={caps} settings={settings} onChange={onSettings} compact={isMobile} />
             </div>
           )}
