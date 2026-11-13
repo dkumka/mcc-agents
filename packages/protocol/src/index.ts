@@ -297,8 +297,9 @@ export interface PrefsState extends Prefs {
 }
 
 /** Speech-to-text models for voice input (OpenRouter /audio/transcriptions). Prices — OpenRouter, Nov 2026. */
-export const VOICE_MODELS: { id: string; label: string; description: string }[] = [
-  { id: 'microsoft/mai-transcribe-2', label: 'Microsoft MAI-Transcribe 2', description: 'Смешанная речь (ru + en) · ≈ $0,10 / час' },
+/** `wav`: the provider rejects WebM/MP4 from MediaRecorder — the browser re-encodes the take to 16 kHz mono WAV (checked 2026-11-13). */
+export const VOICE_MODELS: { id: string; label: string; description: string; wav?: boolean }[] = [
+  { id: 'microsoft/mai-transcribe-2', label: 'Microsoft MAI-Transcribe 2', description: 'Смешанная речь (ru + en) · ≈ $0,10 / час', wav: true },
   { id: 'openai/gpt-transcribe', label: 'OpenAI GPT Transcribe', description: 'Подсказка языков ru и en · ≈ $0,27 / час' },
   { id: 'elevenlabs/scribe-v2', label: 'ElevenLabs Scribe v2', description: 'Сильный русский · ≈ $0,22 / час' },
   { id: 'openai/whisper-large-v3', label: 'OpenAI Whisper Large v3', description: 'Дешёвый · ≈ $0,03 / час' },

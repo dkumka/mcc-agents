@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { TranscribeResult } from '@mcc-agents/protocol';
+import { DEFAULT_VOICE_MODEL, VOICE_MODELS, type TranscribeResult } from '@mcc-agents/protocol';
 import { toLogin } from '@/lib/auth';
+import { store } from '@/lib/store';
 
 /** Longest dictation; the recording stops by itself and goes to transcription. */
 export const MAX_DICTATION_SEC = 5 * 60;
@@ -32,7 +33,53 @@ function micError(e: unknown): string {
   return `Не удалось включить микрофон: ${(e as Error)?.message ?? e}`;
 }
 
-async function transcribe(blob: Blob): Promise<TranscribeResult> {
+/** Decode the take and re-encode it as 16 kHz mono 16-bit WAV (~32 KB/s) — for models that refuse WebM/MP4. */
+async function toWav(blob: Blob): Promise<Blob> {
+  const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const ctx = new Ctx();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  } finally {
+    ctx.close().catch(() => {});
+  }
+  const rate = 16_000;
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * rate)), rate);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const v = new DataView(buf);
+  const str = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF');
+  v.setUint32(4, 36 + pcm.length * 2, true);
+  str(8, 'WAVE');
+  str(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  str(36, 'data');
+  v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+async function transcribe(take: Blob): Promise<TranscribeResult> {
+  const id = store.state.prefs?.voiceModel ?? DEFAULT_VOICE_MODEL;
+  let blob = take;
+  if (VOICE_MODELS.find((m) => m.id === id)?.wav) {
+    try {
+      blob = await toWav(take);
+    } catch {
+      // can't decode here — send as recorded, the server will report if the model refuses it
+    }
+  }
   const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
   if (r.status === 401) toLogin();
   const body = await r.json().catch(() => ({}));
@@ -128,12 +175,16 @@ export function useDictation(onText: (text: string) => void, onError: (msg: stri
       ctx.createMediaStreamSource(stream).connect(an);
       const buf = new Uint8Array(an.fftSize);
       r.ctx = ctx;
+      let frame = 0;
       const tick = () => {
+        r.raf = requestAnimationFrame(tick);
+        // ~15 updates/s is enough for the eye and spares re-rendering the composer every frame on phones
+        if (frame++ % 4) return;
         an.getByteTimeDomainData(buf);
         let sum = 0;
         for (const v of buf) sum += (v - 128) * (v - 128);
-        setLevel(Math.min(1, Math.sqrt(sum / buf.length) / 40));
-        r.raf = requestAnimationFrame(tick);
+        // speech is quiet in absolute terms (RMS ~3–20 of 128): a square-root curve makes the meter lively
+        setLevel(Math.min(1, Math.sqrt(Math.sqrt(sum / buf.length) / 28)));
       };
       tick();
     } catch {}
