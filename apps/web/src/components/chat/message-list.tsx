@@ -83,6 +83,7 @@ function Working({ since, label }: { since: number; label: string }) {
 export function MessageList({ state, footer }: { state: ChatState; footer?: React.ReactNode }) {
   const { top, children: tree } = useTree(state.items);
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [showDown, setShowDown] = useState(false);
   const chatId = state.summary.id;
@@ -130,7 +131,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
     if (el) toBottom(el);
   }, [lastUserId]);
 
-  // keep pinned to the bottom when the viewport shrinks (mobile keyboard)
+  // keep pinned to the bottom when the viewport shrinks (mobile keyboard) or the content grows by itself
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -138,6 +139,8 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
       if (stick.current && !touching.current) toBottom(el);
     });
     ro.observe(el);
+    // content can grow without a React render (content-visibility sizing, images, code highlighting)
+    if (content.current) ro.observe(content.current);
     const unstick = () => {
       if (el.scrollHeight > el.clientHeight) stick.current = false;
     };
@@ -180,7 +183,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
     <div className="relative min-h-0 flex-1">
       <div ref={scroller} onScroll={onScroll} className="scrollbar-thin h-full overflow-y-auto overscroll-contain">
         <FileBase.Provider value={state.summary.cwd}>
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-6 pt-4 md:px-6">
+        <div ref={content} className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-6 pt-4 md:px-6">
           {top.length === 0 && !busy && <div className="py-16 text-center text-sm text-muted-foreground">Сообщений пока нет</div>}
           {top.map((it) => (
             <div key={it.id} className={cn('min-w-0', it.kind === 'user' && 'mt-2')} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 80px' }}>
