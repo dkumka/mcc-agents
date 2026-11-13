@@ -88,6 +88,24 @@
 - В Telegram-подтверждениях беседы помечены «💭 беседа» вместо папки проекта.
 - Продолжить беседу в терминале: меню чата → «Скопировать команду» (`cd ~/chat/<папка> && claude --resume …`).
 
+## Голосовой ввод
+
+- Кнопка 🎤 в поле ввода (`components/chat/composer.tsx`, логика — `lib/dictation.ts`): `getUserMedia` → `MediaRecorder`
+  (Chrome/Android — `audio/webm;codecs=opus`, Safari/iOS — `audio/mp4`), 64 кбит/с, до 5 минут, индикатор громкости.
+  Повторное нажатие — распознать, «Отмена» / Esc — выбросить. Текст вставляется в место курсора; при `voiceAutoSend` сразу
+  отправляется. На телефоне фокус в поле не ставится — клавиатура не выскакивает.
+- `POST /api/transcribe` (`apps/agentd/src/voice.ts`): тело — сырой звук, `Content-Type` — тип записи; проверка Origin как у
+  `/api/upload`; ключ читается из `~/secrets/openrouter.env` при каждом запросе (в браузер не попадает) → OpenRouter
+  `POST /api/v1/audio/transcriptions` `{model, input_audio: {data: base64, format}, temperature: 0}`, без `language`
+  (автоопределение лучше для русского с английскими словами). Запись не сохраняется. Лимит 20 МБ, таймаут 90 с.
+- Модели — `VOICE_MODELS` в `packages/protocol`: MAI-Transcribe 2 (по умолчанию), GPT Transcribe, Scribe v2, Whisper Large v3.
+  Выбор и `voiceAutoSend` — в `Prefs` (сервер, общие для устройств), окно «Настройки» → «Голосовой ввод».
+- **MAI-Transcribe 2 не принимает webm/m4a** (провайдер отвечает 400, проверено 2026-11-13): для моделей с `wav: true`
+  браузер декодирует запись и перекодирует в WAV 16 кГц моно (~32 КБ/с, 5 минут ≈ 9,6 МБ). Остальные три принимают webm и m4a.
+- Проверка 2026-11-13 (фраза «Сделай коммит и запушь в main, потом проверь deploy на staging и открой pull request…»):
+  MAI, GPT Transcribe, Scribe v2 — английские слова латиницей, 1–1,6 с; Whisper пишет «мейн», «деплой» кириллицей.
+- `Permissions-Policy: microphone=(self)` (`apps/web/next.config.ts`) — раньше микрофон был запрещён.
+
 ## Вложения и файлы
 
 - Поле ввода: скрепка, вставка, перетаскивание. Картинки (png/jpeg/webp/gif/heic, до 20 МБ) идут модели как изображения

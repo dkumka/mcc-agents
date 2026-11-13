@@ -300,7 +300,7 @@ export interface PrefsState extends Prefs {
 /** `wav`: the provider rejects WebM/MP4 from MediaRecorder — the browser re-encodes the take to 16 kHz mono WAV (checked 2026-11-13). */
 export const VOICE_MODELS: { id: string; label: string; description: string; wav?: boolean }[] = [
   { id: 'microsoft/mai-transcribe-2', label: 'Microsoft MAI-Transcribe 2', description: 'Смешанная речь (ru + en) · ≈ $0,10 / час', wav: true },
-  { id: 'openai/gpt-transcribe', label: 'OpenAI GPT Transcribe', description: 'Подсказка языков ru и en · ≈ $0,27 / час' },
+  { id: 'openai/gpt-transcribe', label: 'OpenAI GPT Transcribe', description: 'Точный, быстрый · ≈ $0,27 / час' },
   { id: 'elevenlabs/scribe-v2', label: 'ElevenLabs Scribe v2', description: 'Сильный русский · ≈ $0,22 / час' },
   { id: 'openai/whisper-large-v3', label: 'OpenAI Whisper Large v3', description: 'Дешёвый · ≈ $0,03 / час' },
 ];
