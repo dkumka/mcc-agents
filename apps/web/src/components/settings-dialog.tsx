@@ -26,7 +26,7 @@ const DELAYS: { v: number; label: string }[] = [
 const TABS = [
   { id: 'voice', label: 'Голос' },
   { id: 'telegram', label: 'Telegram' },
-  { id: 'files', label: 'Вложения' },
+  { id: 'files', label: 'Файлы' },
   { id: 'general', label: 'Общие' },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
