@@ -615,6 +615,18 @@ export function Composer({
               e.target.value = '';
             }}
           />
+          {dictating ? (
+            <DictationBar state={dictation.state} seconds={dictation.seconds} level={dictation.level} onCancel={dictation.cancel} />
+          ) : (
+            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-14px),transparent)]">
+              <SettingsChips caps={caps} settings={settings} onChange={onSettings} compact={isMobile} />
+            </div>
+          )}
+          {busy && onStop && (
+            <Button type="button" variant="secondary" size="icon" className="size-9 shrink-0 rounded-full" onClick={onStop} aria-label="Остановить">
+              <SquareIcon className="size-3.5 fill-current" />
+            </Button>
+          )}
           {canDictate && !dictating && (
             <Button
               type="button"
@@ -627,18 +639,6 @@ export function Composer({
               title="Голосовой ввод"
             >
               <MicIcon className="size-4" />
-            </Button>
-          )}
-          {dictating ? (
-            <DictationBar state={dictation.state} seconds={dictation.seconds} level={dictation.level} onCancel={dictation.cancel} />
-          ) : (
-            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-14px),transparent)]">
-              <SettingsChips caps={caps} settings={settings} onChange={onSettings} compact={isMobile} />
-            </div>
-          )}
-          {busy && onStop && (
-            <Button type="button" variant="secondary" size="icon" className="size-9 shrink-0 rounded-full" onClick={onStop} aria-label="Остановить">
-              <SquareIcon className="size-3.5 fill-current" />
             </Button>
           )}
           {dictating ? (
