@@ -92,35 +92,85 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
     return Date.now();
   }, [state.items]);
 
-  // stick to bottom while new content arrives (unless the user scrolled up)
+  // Stick to the bottom while the answer streams in — unless the reader moved up.
+  // Any upward move (wheel, finger, keys, scrollbar) unsticks at once; while a finger is on the screen we never scroll
+  // (on iOS a programmatic scroll also kills the momentum); it sticks again only when the reader comes back down to the
+  // bottom, presses «Вниз» or sends a message.
+  const touching = useRef(false);
+  const lastTop = useRef(0);
+  const maxTop = (el: HTMLDivElement) => Math.max(0, el.scrollHeight - el.clientHeight);
+  const toBottom = (el: HTMLDivElement) => {
+    el.scrollTop = el.scrollHeight;
+    lastTop.current = Math.min(el.scrollTop, maxTop(el));
+  };
+
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (el && stick.current && !touching.current) toBottom(el);
   });
 
   useEffect(() => {
     stick.current = true;
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el) toBottom(el);
   }, [chatId]);
+
+  // a message of your own: back to the bottom
+  const lastUserId = useMemo(() => {
+    for (let i = state.items.length - 1; i >= 0; i--) if (state.items[i].kind === 'user') return state.items[i].id;
+    return null;
+  }, [state.items]);
+  const seenUser = useRef(lastUserId);
+  useEffect(() => {
+    if (lastUserId === seenUser.current) return;
+    seenUser.current = lastUserId;
+    stick.current = true;
+    setShowDown(false);
+    const el = scroller.current;
+    if (el) toBottom(el);
+  }, [lastUserId]);
 
   // keep pinned to the bottom when the viewport shrinks (mobile keyboard)
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      if (stick.current) el.scrollTop = el.scrollHeight;
+      if (stick.current && !touching.current) toBottom(el);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    const unstick = () => {
+      if (el.scrollHeight > el.clientHeight) stick.current = false;
+    };
+    const onWheel = (e: WheelEvent) => e.deltaY < 0 && unstick();
+    const onKey = (e: KeyboardEvent) => ['ArrowUp', 'PageUp', 'Home'].includes(e.key) && unstick();
+    const down = () => (touching.current = true);
+    const up = () => (touching.current = false);
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('keydown', onKey);
+    el.addEventListener('touchstart', down, { passive: true });
+    el.addEventListener('touchend', up, { passive: true });
+    el.addEventListener('touchcancel', up, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('keydown', onKey);
+      el.removeEventListener('touchstart', down);
+      el.removeEventListener('touchend', up);
+      el.removeEventListener('touchcancel', up);
+    };
   }, []);
 
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    stick.current = atBottom;
-    setShowDown(!atBottom);
+    // clamp: iOS rubber-band past the end must not read as "moved up"
+    const t = Math.min(Math.max(el.scrollTop, 0), maxTop(el));
+    const dist = maxTop(el) - t;
+    // moved up and is no longer at the bottom (content shrinking at the bottom also lowers scrollTop, but leaves dist ≈ 0)
+    if (t < lastTop.current - 1 && dist > 2) stick.current = false;
+    else if (t > lastTop.current && dist < 24) stick.current = true;
+    lastTop.current = t;
+    setShowDown(dist > 80);
   };
 
   const last = top[top.length - 1];
@@ -149,8 +199,9 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           className="absolute bottom-3 left-1/2 size-9 -translate-x-1/2 rounded-full shadow-md"
           onClick={() => {
             stick.current = true;
+            setShowDown(false);
             const el = scroller.current;
-            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            if (el) toBottom(el);
           }}
           aria-label="Вниз"
         >
