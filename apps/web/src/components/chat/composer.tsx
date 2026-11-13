@@ -120,7 +120,7 @@ export function SettingsChips({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Chip icon={CpuIcon} compact={compact} aria-label={`Модель: ${modelLabel}`}>
-            {modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1').replace(compact ? /^(Claude|GPT)[ -]/i : /^$/, '')}
+            {modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1')}
           </Chip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
