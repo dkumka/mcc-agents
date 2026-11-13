@@ -68,25 +68,46 @@ function detectPopup(text: string, caret: number): Popup {
 }
 
 const EFFORT_LABEL: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий', xhigh: 'Очень высокий', max: 'Максимум', ultra: 'Ультра', minimal: 'Минимальный' };
+/** Phone: the chips share one row with 📎, 🎤 and «Отправить» — short labels, no chevrons. */
+const EFFORT_SHORT: Record<string, string> = { low: 'Низк.', medium: 'Сред.', high: 'Выс.', xhigh: 'Оч. выс.', max: 'Макс.', ultra: 'Ультра', minimal: 'Мин.' };
+const MODE_SHORT: Record<string, string> = {
+  default: 'Спрос',
+  untrusted: 'Спрос',
+  acceptEdits: 'Правки',
+  'on-request': 'Сам',
+  bypassPermissions: 'Без вопр.',
+  never: 'Без вопр.',
+};
 
-function Chip({ icon: Icon, children, className, ...p }: React.ComponentProps<'button'> & { icon: typeof CpuIcon }) {
+function Chip({ icon: Icon, children, className, compact, ...p }: React.ComponentProps<'button'> & { icon: typeof CpuIcon; compact?: boolean }) {
   return (
     <button
       type="button"
       className={cn(
-        'inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted',
+        'inline-flex h-8 shrink-0 items-center rounded-md text-xs text-muted-foreground hover:bg-muted hover:text-foreground data-[state=open]:bg-muted',
+        compact ? 'max-w-[7rem] gap-0.5 px-1.5' : 'max-w-[11rem] gap-1 px-2',
         className,
       )}
       {...p}
     >
       <Icon className="size-3.5 shrink-0" />
       <span className="truncate">{children}</span>
-      <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
+      {!compact && <ChevronDownIcon className="size-3 shrink-0 opacity-60" />}
     </button>
   );
 }
 
-export function SettingsChips({ caps, settings, onChange }: { caps: AgentCapabilities | null; settings: ChatSettings; onChange: (s: ChatSettings) => void }) {
+export function SettingsChips({
+  caps,
+  settings,
+  onChange,
+  compact,
+}: {
+  caps: AgentCapabilities | null;
+  settings: ChatSettings;
+  onChange: (s: ChatSettings) => void;
+  compact?: boolean;
+}) {
   const models = caps?.models ?? [];
   const model = models.find((m) => m.id === settings.model) ?? models.find((m) => settings.model && settings.model.includes(m.id)) ?? models.find((m) => m.isDefault);
   const efforts = model?.efforts ?? [];
@@ -98,7 +119,9 @@ export function SettingsChips({ caps, settings, onChange }: { caps: AgentCapabil
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Chip icon={CpuIcon}>{modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1')}</Chip>
+          <Chip icon={CpuIcon} compact={compact} aria-label={`Модель: ${modelLabel}`}>
+            {modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1').replace(compact ? /^(Claude|GPT)[ -]/i : /^$/, '')}
+          </Chip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">
           <DropdownMenuLabel>Модель</DropdownMenuLabel>
@@ -117,7 +140,9 @@ export function SettingsChips({ caps, settings, onChange }: { caps: AgentCapabil
       {efforts.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Chip icon={BrainIcon}>{effort ? EFFORT_LABEL[effort] ?? effort : 'Авто'}</Chip>
+            <Chip icon={BrainIcon} compact={compact} aria-label={`Глубина размышлений: ${effort ? (EFFORT_LABEL[effort] ?? effort) : 'Авто'}`}>
+              {effort ? ((compact ? EFFORT_SHORT[effort] : undefined) ?? EFFORT_LABEL[effort] ?? effort) : 'Авто'}
+            </Chip>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
             <DropdownMenuLabel>Глубина размышлений</DropdownMenuLabel>
@@ -135,8 +160,13 @@ export function SettingsChips({ caps, settings, onChange }: { caps: AgentCapabil
       {modes.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Chip icon={ShieldIcon} className={cn(settings.permissionMode === 'bypassPermissions' || settings.permissionMode === 'never' ? 'text-warning' : '')}>
-              {mode?.label ?? 'Режим'}
+            <Chip
+              icon={ShieldIcon}
+              compact={compact}
+              aria-label={`Подтверждения: ${mode?.label ?? 'Режим'}`}
+              className={cn(settings.permissionMode === 'bypassPermissions' || settings.permissionMode === 'never' ? 'text-warning' : '')}
+            >
+              {(compact && mode ? MODE_SHORT[mode.id] : undefined) ?? mode?.label ?? 'Режим'}
             </Chip>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
@@ -585,11 +615,25 @@ export function Composer({
               e.target.value = '';
             }}
           />
+          {canDictate && !dictating && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-9 shrink-0 text-muted-foreground"
+              disabled={sending}
+              onClick={() => dictation.start()}
+              aria-label="Голосовой ввод"
+              title="Голосовой ввод"
+            >
+              <MicIcon className="size-4" />
+            </Button>
+          )}
           {dictating ? (
             <DictationBar state={dictation.state} seconds={dictation.seconds} level={dictation.level} onCancel={dictation.cancel} />
           ) : (
-            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-20px),transparent)]">
-              <SettingsChips caps={caps} settings={settings} onChange={onSettings} />
+            <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [mask-image:linear-gradient(90deg,#000_calc(100%-14px),transparent)]">
+              <SettingsChips caps={caps} settings={settings} onChange={onSettings} compact={isMobile} />
             </div>
           )}
           {busy && onStop && (
@@ -597,32 +641,24 @@ export function Composer({
               <SquareIcon className="size-3.5 fill-current" />
             </Button>
           )}
-          {canDictate && (
+          {dictating ? (
+            // finishing the take sits where «Отправить» is — under the thumb
             <Button
               type="button"
-              variant={dictation.state === 'recording' ? 'default' : 'ghost'}
               size="icon"
-              className={cn(
-                'size-9 shrink-0 rounded-full',
-                dictation.state === 'recording' ? 'bg-destructive text-white hover:bg-destructive/90' : 'text-muted-foreground',
-              )}
-              disabled={dictation.state === 'starting' || dictation.state === 'transcribing' || sending}
-              onClick={() => (dictation.state === 'recording' ? dictation.stop() : dictation.start())}
-              aria-label={dictation.state === 'recording' ? (autoSend ? 'Закончить и отправить' : 'Закончить запись') : 'Голосовой ввод'}
-              title={dictation.state === 'recording' ? (autoSend ? 'Закончить и отправить' : 'Закончить — текст появится в поле') : 'Голосовой ввод'}
+              className="size-9 shrink-0 rounded-full bg-destructive text-white hover:bg-destructive/90"
+              disabled={dictation.state !== 'recording'}
+              onClick={() => dictation.stop()}
+              aria-label={autoSend ? 'Закончить и отправить' : 'Закончить запись'}
+              title={autoSend ? 'Закончить и отправить' : 'Закончить — текст появится в поле'}
             >
-              {dictation.state === 'transcribing' || dictation.state === 'starting' ? (
-                <Loader2Icon className="size-4 animate-spin" />
-              ) : dictation.state === 'recording' ? (
-                autoSend ? <ArrowUpIcon className="size-4" /> : <CheckIcon className="size-4" />
-              ) : (
-                <MicIcon className="size-4" />
-              )}
+              {dictation.state === 'recording' ? autoSend ? <ArrowUpIcon className="size-4" /> : <CheckIcon className="size-4" /> : <Loader2Icon className="size-4 animate-spin" />}
+            </Button>
+          ) : (
+            <Button type="button" size="icon" className="size-9 shrink-0 rounded-full" disabled={!canSend} onClick={() => submit()} aria-label={busy ? 'Отправить в очередь' : 'Отправить'}>
+              {sending ? <CheckIcon className="size-4 animate-pulse" /> : <ArrowUpIcon className="size-4" />}
             </Button>
           )}
-          <Button type="button" size="icon" className={cn('size-9 shrink-0 rounded-full', dictating && 'hidden')} disabled={!canSend} onClick={() => submit()} aria-label={busy ? 'Отправить в очередь' : 'Отправить'}>
-            {sending ? <CheckIcon className="size-4 animate-pulse" /> : <ArrowUpIcon className="size-4" />}
-          </Button>
         </div>
       </div>
     </div>
