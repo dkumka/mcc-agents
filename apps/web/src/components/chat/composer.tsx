@@ -7,7 +7,7 @@ import type { AgentCapabilities, AttachedFile, ChatSettings, SendPayload } from 
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { api, uploadFile } from '@/lib/api';
-import { dictationSupported, MAX_DICTATION_SEC, useDictation } from '@/lib/dictation';
+import { dictationSupported, MAX_DICTATION_SEC, retryVoice, useDictation, type VoiceRef } from '@/lib/dictation';
 import { useStore } from '@/lib/store';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -342,27 +342,46 @@ export function Composer({
   const autoSend = useStore((s) => s.prefs?.voiceAutoSend ?? false);
   const [canDictate, setCanDictate] = useState(false);
   useEffect(() => setCanDictate(dictationSupported()), []);
+  const insertDictation = (said: string, send: boolean) => {
+    const el = ta.current;
+    const at = el && document.activeElement === el ? el.selectionStart : text.length;
+    const before = text.slice(0, at);
+    const after = text.slice(at);
+    const lead = before && !/\s$/.test(before) ? ' ' : '';
+    const trail = after && !/^\s/.test(after) ? ' ' : '';
+    const next = before + lead + said + trail + after;
+    if (send && !uploading) return void submit(next);
+    setText(next);
+    // keep the keyboard closed on phones — the whole point is not to type
+    if (!window.matchMedia('(pointer: coarse)').matches)
+      requestAnimationFrame(() => {
+        const pos = (before + lead + said).length;
+        ta.current?.focus();
+        ta.current?.setSelectionRange(pos, pos);
+      });
+  };
+  const retryDictation = (rec: VoiceRef) => {
+    const p = retryVoice(rec);
+    toast.promise(p, { loading: 'Распознаю ещё раз…', success: 'Готово', error: (e: Error) => e.message });
+    p.then((r) => r.text && insertDictation(r.text, autoSend)).catch(() => {});
+  };
   const dictation = useDictation(
-    (said) => {
-      const el = ta.current;
-      const at = el && document.activeElement === el ? el.selectionStart : text.length;
-      const before = text.slice(0, at);
-      const after = text.slice(at);
-      const lead = before && !/\s$/.test(before) ? ' ' : '';
-      const trail = after && !/^\s/.test(after) ? ' ' : '';
-      const next = before + lead + said + trail + after;
-      if (autoSend && !uploading) return void submit(next);
-      setText(next);
-      // keep the keyboard closed on phones — the whole point is not to type
-      if (!window.matchMedia('(pointer: coarse)').matches)
-        requestAnimationFrame(() => {
-          const pos = (before + lead + said).length;
-          ta.current?.focus();
-          ta.current?.setSelectionRange(pos, pos);
-        });
+    (said, rec) => {
+      insertDictation(said, autoSend);
+      if (rec.cleanupError) toast.warning('Текст не удалось исправить — вставлен как распознан', { description: rec.cleanupError });
     },
-    (msg) => toast.error(msg),
+    // the take stays on the server: retry right here, or later from Settings → Голос
+    (msg, rec) =>
+      toast.error(msg, rec ? { duration: 30_000, description: 'Запись сохранена — её можно распознать ещё раз (и в Настройках → Голос).', action: { label: 'Повторить', onClick: () => retryDictation(rec) } } : undefined),
   );
+  // «Вставить» from the dictation history in Settings
+  const insertRef = useRef(insertDictation);
+  insertRef.current = insertDictation;
+  useEffect(() => {
+    const on = (e: Event) => insertRef.current((e as CustomEvent<string>).detail, false);
+    window.addEventListener('mcc:insert-text', on);
+    return () => window.removeEventListener('mcc:insert-text', on);
+  }, []);
   const dictating = dictation.state !== 'idle';
 
   const upload = (f: File, forImage = false) => {

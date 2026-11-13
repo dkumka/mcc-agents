@@ -39,7 +39,7 @@ export interface TgMessage {
 }
 
 const file = path.join(config.dataDir, 'state.json');
-const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60, voiceModel: 'microsoft/mai-transcribe-2', voiceAutoSend: false };
+const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60, voiceModel: 'microsoft/mai-transcribe-2', voiceAutoSend: false, voiceCleanup: true, voiceCleanupModel: 'google/gemini-3.1-flash-lite', voiceTranslate: false };
 let data: StoreData = { version: 1, meta: {}, limits: {}, windows: {}, lastSettings: {}, prefs: { ...DEFAULT_PREFS }, tgOffset: 0, tgMessages: {} };
 let timer: NodeJS.Timeout | null = null;
 

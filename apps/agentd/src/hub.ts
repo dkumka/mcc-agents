@@ -25,8 +25,8 @@ import { store } from './store.ts';
 import { TelegramBridge } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
 import { textWithFiles } from './uploads.ts';
-import { openrouterKey, voiceModel } from './voice.ts';
-import { VOICE_MODELS } from '@mcc-agents/protocol';
+import { cleanupModel, openrouterKey, voiceModel } from './voice.ts';
+import { CLEANUP_MODELS, VOICE_MODELS } from '@mcc-agents/protocol';
 
 const log = logger('hub');
 
@@ -89,7 +89,7 @@ export class Hub implements ChatSink {
   }
 
   prefsState(): PrefsState {
-    return { ...store.prefs(), voiceModel: voiceModel(), telegramReady: this.tg.ready, voiceReady: !!openrouterKey() };
+    return { ...store.prefs(), voiceModel: voiceModel(), voiceCleanupModel: cleanupModel(), telegramReady: this.tg.ready, voiceReady: !!openrouterKey() };
   }
 
   register(a: Adapter) {
@@ -410,6 +410,12 @@ export class Hub implements ChatSink {
           store.setPrefs({ voiceModel: p.voiceModel });
         }
         if (p.voiceAutoSend !== undefined) store.setPrefs({ voiceAutoSend: !!p.voiceAutoSend });
+        if (p.voiceCleanup !== undefined) store.setPrefs({ voiceCleanup: !!p.voiceCleanup });
+        if (p.voiceTranslate !== undefined) store.setPrefs({ voiceTranslate: !!p.voiceTranslate });
+        if (p.voiceCleanupModel !== undefined) {
+          if (!CLEANUP_MODELS.some((v) => v.id === p.voiceCleanupModel)) throw new Error('неизвестная модель для исправления текста');
+          store.setPrefs({ voiceCleanupModel: p.voiceCleanupModel });
+        }
         this.broadcast({ t: 'prefs', prefs: this.prefsState() });
         return;
       }

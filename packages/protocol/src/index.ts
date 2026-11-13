@@ -287,6 +287,12 @@ export interface Prefs {
   voiceModel: string;
   /** Send the message right after the dictation is transcribed (no keyboard at all). */
   voiceAutoSend: boolean;
+  /** Tidy the transcript with an LLM: drop fillers and stutters, English terms in Latin script. */
+  voiceCleanup: boolean;
+  /** LLM for the cleanup / translation (one of CLEANUP_MODELS). */
+  voiceCleanupModel: string;
+  /** Also translate the dictation into English. */
+  voiceTranslate: boolean;
 }
 
 export interface PrefsState extends Prefs {
@@ -306,12 +312,39 @@ export const VOICE_MODELS: { id: string; label: string; description: string; wav
 ];
 export const DEFAULT_VOICE_MODEL = VOICE_MODELS[0].id;
 
-/** POST /api/transcribe response. */
-export interface TranscribeResult {
-  text: string;
-  model: string;
-  ms: number;
+/** LLMs for tidying / translating a dictation (OpenRouter chat). Checked 2026-11-13 on mixed ru/en dictation. */
+export const CLEANUP_MODELS: { id: string; label: string; description: string }[] = [
+  { id: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', description: 'Точнее всех сохраняет формулировки · 0,5–1 с' },
+  { id: 'openai/gpt-6-luna', label: 'GPT 6 Luna', description: 'Чуть сокращает · 1,5–2 с, перевод до 6 с' },
+  { id: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5', description: 'Иногда оставляет «Айфон» кириллицей · ~1 с' },
+];
+export const DEFAULT_CLEANUP_MODEL = CLEANUP_MODELS[0].id;
+
+/** A dictation kept on the server (audio + transcript) — history in Settings → Голос, retry, delete. */
+export interface VoiceRecord {
+  id: string;
+  createdAt: number;
+  /** Absolute path of the audio (open with /api/raw). */
+  file: string;
+  mediaType: string;
+  size: number;
+  durationSec?: number;
+  status: 'ok' | 'error';
+  /** Speech-to-text output as is. */
+  raw?: string;
+  /** What goes into the message: cleaned / translated, or `raw` when the cleanup is off or failed. */
+  text?: string;
+  model?: string;
+  cleanupModel?: string;
+  translated?: boolean;
+  /** Cleanup failed — `text` is the raw transcript. */
+  cleanupError?: string;
+  error?: string;
+  ms?: number;
 }
+
+/** POST /api/transcribe, POST /api/voice/retry → VoiceRecord; an error response carries `{ error, id }`. */
+export type TranscribeResult = VoiceRecord;
 
 // ---------------------------------------------------------------- websocket
 

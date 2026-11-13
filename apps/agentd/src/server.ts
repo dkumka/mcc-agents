@@ -9,7 +9,7 @@ import type { Client, Hub } from './hub.ts';
 import { logger } from './log.ts';
 import { serveRaw } from './raw.ts';
 import { handleUpload, uploadsStats } from './uploads.ts';
-import { handleTranscribe } from './voice.ts';
+import { handleVoicePost, listVoice } from './voice.ts';
 
 const log = logger('server');
 let clientSeq = 0;
@@ -46,6 +46,8 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
         return await serveRaw(req, res, q);
       case '/api/uploads':
         return json(res, 200, uploadsStats());
+      case '/api/voice':
+        return json(res, 200, listVoice());
       case '/api/git':
         return json(res, 200, await gitStatus(q.get('cwd') ?? ''));
       case '/api/output': {
@@ -162,7 +164,7 @@ export function startServer(hub: Hub) {
     const srv = http.createServer((req, res) => {
       const u = req.url ?? '/';
       if (u.startsWith('/api/upload') && req.method === 'POST') return handleUpload(req, res);
-      if (u.startsWith('/api/transcribe') && req.method === 'POST') return void handleTranscribe(req, res);
+      if ((u.startsWith('/api/transcribe') || u.startsWith('/api/voice/')) && req.method === 'POST') return void handleVoicePost(req, res);
       if (u.startsWith('/api/')) return void api(hub, req, res);
       if (local) return proxyHttp(req, res);
       res.writeHead(404).end();

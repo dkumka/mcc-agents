@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DEFAULT_VOICE_MODEL, VOICE_MODELS, type TranscribeResult } from '@mcc-agents/protocol';
+import { DEFAULT_VOICE_MODEL, VOICE_MODELS, type VoiceRecord } from '@mcc-agents/protocol';
 import { toLogin } from '@/lib/auth';
 import { store } from '@/lib/store';
 
@@ -34,7 +34,7 @@ function micError(e: unknown): string {
 }
 
 /** Decode the take and re-encode it as 16 kHz mono 16-bit WAV (~32 KB/s) — for models that refuse WebM/MP4. */
-async function toWav(blob: Blob): Promise<Blob> {
+export async function toWav(blob: Blob): Promise<Blob> {
   const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   const ctx = new Ctx();
   let decoded: AudioBuffer;
@@ -70,28 +70,53 @@ async function toWav(blob: Blob): Promise<Blob> {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-async function transcribe(take: Blob): Promise<TranscribeResult> {
-  const id = store.state.prefs?.voiceModel ?? DEFAULT_VOICE_MODEL;
+/** A failed recognition: the take is stored on the server under `id` — it can be retried. */
+export type VoiceRef = Pick<VoiceRecord, 'id' | 'file' | 'mediaType'>;
+export class VoiceError extends Error {
+  rec?: VoiceRef;
+  constructor(message: string, rec?: VoiceRef) {
+    super(message);
+    this.rec = rec;
+  }
+}
+
+async function postVoice(url: string, body?: Blob, headers: Record<string, string> = {}): Promise<VoiceRecord> {
+  const r = await fetch(url, { method: 'POST', headers: body ? { 'Content-Type': body.type || 'audio/webm', ...headers } : headers, body });
+  if (r.status === 401) toLogin();
+  const res = await r.json().catch(() => ({}));
+  if (!r.ok) throw new VoiceError(res?.error ?? `Ошибка распознавания (${r.status})`, res?.id ? { id: res.id, file: res.file, mediaType: res.mediaType } : undefined);
+  return res as VoiceRecord;
+}
+
+const needsWav = (model: string) => !!VOICE_MODELS.find((m) => m.id === model)?.wav;
+
+async function transcribe(take: Blob, seconds: number): Promise<VoiceRecord> {
   let blob = take;
-  if (VOICE_MODELS.find((m) => m.id === id)?.wav) {
+  if (needsWav(store.state.prefs?.voiceModel ?? DEFAULT_VOICE_MODEL)) {
     try {
       blob = await toWav(take);
     } catch {
       // can't decode here — send as recorded, the server will report if the model refuses it
     }
   }
-  const r = await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': blob.type || 'audio/webm' }, body: blob });
-  if (r.status === 401) toLogin();
-  const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(body?.error ?? `Ошибка распознавания (${r.status})`);
-  return body as TranscribeResult;
+  return postVoice('/api/transcribe', blob, { 'X-Duration': String(seconds) });
+}
+
+/** Recognise a stored take again (any model). A model that refuses the stored format gets it re-encoded to WAV here. */
+export async function retryVoice(rec: VoiceRef, model = store.state.prefs?.voiceModel ?? DEFAULT_VOICE_MODEL): Promise<VoiceRecord> {
+  const url = `/api/voice/retry?id=${encodeURIComponent(rec.id)}&model=${encodeURIComponent(model)}`;
+  if (needsWav(model) && rec.mediaType !== 'audio/wav') {
+    const audio = await fetch(`/api/raw?path=${encodeURIComponent(rec.file)}`).then((r) => r.blob());
+    return postVoice(url, await toWav(audio));
+  }
+  return postVoice(url);
 }
 
 /**
  * Voice input: record from the microphone, send to the server (`/api/transcribe` → OpenRouter), get text back.
  * `level` is 0..1 (for the meter), `seconds` — recording time.
  */
-export function useDictation(onText: (text: string) => void, onError: (msg: string) => void) {
+export function useDictation(onText: (text: string, rec: VoiceRecord) => void, onError: (msg: string, rec?: VoiceRef) => void) {
   const [state, setState] = useState<DictationState>('idle');
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
@@ -144,6 +169,7 @@ export function useDictation(onText: (text: string) => void, onError: (msg: stri
       return cb.current.onError(`Запись не поддерживается: ${(e as Error).message}`);
     }
     const chunks: Blob[] = [];
+    const t0 = Date.now();
     const r: Rec = { mr, stream };
     rec.current = r;
     mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
@@ -157,11 +183,11 @@ export function useDictation(onText: (text: string) => void, onError: (msg: stri
       }
       setState('transcribing');
       try {
-        const res = await transcribe(blob);
-        if (res.text) cb.current.onText(res.text);
-        else cb.current.onError('Ничего не распознано — попробуйте ещё раз');
+        const res = await transcribe(blob, Math.round((Date.now() - t0) / 1000));
+        if (res.text) cb.current.onText(res.text, res);
+        else cb.current.onError('Ничего не распознано — попробуйте ещё раз', res);
       } catch (e) {
-        cb.current.onError((e as Error).message);
+        cb.current.onError((e as Error).message, (e as VoiceError).rec);
       } finally {
         setState('idle');
       }
@@ -188,7 +214,6 @@ export function useDictation(onText: (text: string) => void, onError: (msg: stri
       };
       tick();
     } catch {}
-    const t0 = Date.now();
     setSeconds(0);
     r.timer = window.setInterval(() => {
       const s = Math.floor((Date.now() - t0) / 1000);

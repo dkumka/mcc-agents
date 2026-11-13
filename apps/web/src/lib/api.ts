@@ -1,5 +1,5 @@
 import { toLogin } from '@/lib/auth';
-import type { AgentCapabilities, AgentKind, AttachedFile, DirEntry, GitStatus, ProjectInfo } from '@mcc-agents/protocol';
+import type { AgentCapabilities, AgentKind, AttachedFile, DirEntry, GitStatus, ProjectInfo, VoiceRecord } from '@mcc-agents/protocol';
 
 async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
   const q = new URLSearchParams();
@@ -19,6 +19,7 @@ export const api = {
   file: (path: string) => get<{ path: string; content: string; size: number; truncated: boolean; binary: boolean }>('file', { path }),
   git: (cwd: string) => get<GitStatus>('git', { cwd }),
   uploads: () => get<{ dir: string; files: number; bytes: number }>('uploads'),
+  voice: () => get<{ records: VoiceRecord[]; bytes: number; dir: string }>('voice'),
   output: (chatId: string, itemId: string) => get<{ output: string }>('output', { chatId, itemId }),
   taskOutput: (chatId: string, taskId: string) => get<{ output: string; file: string }>('task-output', { chatId, taskId }),
 };
@@ -56,4 +57,13 @@ export function capsCached(agent: AgentKind, cwd?: string) {
   p.catch(() => capsCache.delete(key));
   capsCache.set(key, { at: Date.now(), p });
   return p;
+}
+
+/** Delete one stored dictation (or all of them). */
+export async function deleteVoice(id: string | 'all'): Promise<number> {
+  const r = await fetch(`/api/voice/delete?${id === 'all' ? 'all=1' : `id=${encodeURIComponent(id)}`}`, { method: 'POST' });
+  if (r.status === 401) toLogin();
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
+  return body.deleted ?? 0;
 }
