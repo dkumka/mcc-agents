@@ -1,0 +1,19 @@
+{
+  "name": "mcc-agents",
+  "private": true,
+  "description": "Web shell for the official claude and codex CLIs (personal use, mcc server)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "build:web": "npm run build -w apps/web",
+    "start:agentd": "node apps/agentd/src/index.ts",
+    "typecheck": "tsc -p apps/agentd --noEmit && tsc -p packages/protocol --noEmit && npm run typecheck -w apps/web",
+    "lint": "npm run lint -w apps/web"
+  }
+}

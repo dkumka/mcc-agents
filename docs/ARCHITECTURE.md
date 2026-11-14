@@ -1,0 +1,240 @@
+# Архитектура mcc agents
+
+```
+браузер (телефон / Mac)
+   │ https://agents.mcc.example.com  (nginx, basic auth code.htpasswd)
+   ├── /            → 127.0.0.1:3110  mcc-agents-web   (Next.js: только интерфейс, без состояния)
+   └── /api/*, /ws  → unix:/run/mcc-agents/agentd.sock  mcc-agentd
+                                   │
+                                   ├── claude -p --input-format stream-json … (процесс на активный чат)
+                                   └── codex app-server (один на все треды, JSON-RPC по stdio)
+```
+
+Почему демон отдельно от Next: процессы агентов должны жить, пока идёт работа (фоновая задача Claude живёт внутри
+процесса `claude` и пропадает с ним). Next можно пересобирать и перезапускать сколько угодно — чаты не прерываются.
+
+## agentd (`apps/agentd/src`)
+
+| Файл | Что делает |
+|---|---|
+| `index.ts` | запуск: store, hub, адаптеры, сервер, периодический `refresh` (10 с) и `sweep` (60 с) |
+| `config.ts` | пути, сокеты, таймауты (переменные `AGENTD_*`) |
+| `server.ts` | HTTP API + WebSocket (`ws`). Два сокета: `agentd.sock` (nginx, 660 codeweb) и `local.sock` (600, для `ssh -L`; ещё и проксирует всё прочее в Next). Проверка Origin = Host для WS |
+| `hub.ts` | список всех чатов (обоих агентов), подписки браузеров, создание чатов, уведомления, `projects()` |
+| `chat.ts` | состояние одного чата: нормализованные элементы + live-состояние; рассылка изменений, батчинг дельт (40 мс), усечение больших выводов на проводе |
+| `store.ts` | `~/.local/share/mcc-agents/state.json`: закрепления, свои названия, настройки чатов, lastSeen, лимиты, окна контекста моделей |
+| `tools.ts` | классификация инструментов Claude (Bash/Edit/Read/…) → категория, заголовок, diff |
+| `fsapi.ts` | файлы, дерево, поиск файлов для `@` (`rg --files`), `git status/diff` |
+| `claude/sessions.ts` | инкрементальный скан `~/.claude/projects/*/*.jsonl` (чтение с последнего смещения), загрузка истории |
+| `claude/normalize.ts` | строки транскрипта / события stream-json → `ChatItem` (общий код для истории и live) |
+| `claude/index.ts` | `ClaudeProc` (процесс на чат) и `ClaudeAdapter` |
+| `codex/rpc.ts` | клиент `codex app-server` (JSON-RPC, автоперезапуск) |
+| `codex/index.ts` | `CodexAdapter`: треды, история (`thread/turns/list`, itemsView full), события, подтверждения |
+
+### Claude
+
+- Запуск: `CLAUDE_CODE_ENTRYPOINT=mcc-agents claude -p --input-format stream-json --output-format stream-json --verbose
+  --include-partial-messages --permission-prompt-tool stdio --allow-dangerously-skip-permissions (--session-id|--resume) <id>
+  [--model] [--effort] [--permission-mode]`.
+  - `CLAUDE_CODE_ENTRYPOINT=mcc-agents` — иначе `-p` помечает сессию `sdk-cli`, и терминальный `claude --resume` её скрывает.
+  - `--permission-prompt-tool stdio` — запросы разрешений приходят как `control_request can_use_tool`; ответ `allow`
+    (+`updatedInput`, +`updatedPermissions` из `permission_suggestions`) / `deny`. Так же идут `AskUserQuestion`
+    (ответы в `updatedInput.answers`) и `ExitPlanMode`.
+- Control-запросы демона: `initialize`, `interrupt`, `set_model`, `set_permission_mode`, `apply_flag_settings {effortLevel}`,
+  `get_context_usage` (после каждого хода — точный % контекста), `stop_task`.
+- События: `stream_event` (дельты текста/мыслей), `assistant`/`user` (блоки, результаты инструментов, `tool_use_result`
+  со `structuredPatch` для diff), `system` (`init`, `status`, `task_*`, `compact_boundary`, `api_retry`, `session_title_changed`,
+  `thinking_tokens`), `result`, `rate_limit_event` (окна `five_hour`, `seven_day…`).
+- Очередь: сообщения во время работы просто пишутся в stdin — CLI выполняет их по порядку (каждое даёт свой `result`).
+- Простаивающий процесс (`AGENTD_CLAUDE_IDLE_MS`, 20 мин) закрывается, если нет хода, подтверждений и фоновых задач;
+  следующее сообщение поднимает его через `--resume`.
+- Перед `--resume` проверяется `/proc`: если сессию держит другой `claude` (терминал), чат не запускается и показывается
+  баннер — две программы в одной сессии испортили бы историю.
+- Возможности (модели, слэш-команды, skills, режим по умолчанию, тариф) — короткий `claude -p` только с `initialize`
+  (без запроса к API), кэш 10 мин на папку.
+
+### Codex
+
+- Один `codex app-server`; при открытии чата — `thread/resume` (подписка на события) + `thread/turns/list`.
+  Новый чат — `thread/start {cwd, model, approvalPolicy, sandbox: danger-full-access}`, сообщение — `turn/start`
+  (модель, effort, approvalPolicy на каждый ход), во время хода — `turn/steer`.
+- Подтверждения: серверные запросы `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`,
+  `item/tool/requestUserInput`, `item/permissions/requestApproval`. Режимы: `untrusted` (спрашивать), `on-request`, `never`.
+- События: `item/started|completed`, дельты (`agentMessage`, `reasoning`, `commandExecution/outputDelta`),
+  `turn/plan/updated` (→ список задач), `thread/tokenUsage/updated` (контекст), `account/rateLimits/updated` (лимиты).
+- `clientUserMessageId` = наш id сообщения → своё сообщение не дублируется.
+- `/compact` → `thread/compact/start`. Картинки → `uploads/<uuid>.<ext>` → `localImage`.
+
+## Режимы «Чат» и «Код»
+
+- Переключатель вверху левой панели (`app-sidebar.tsx → ModeSwitch`). «Код» — работа в проектах (список по папкам, выбор
+  проекта). «Чат» — беседы вне проектов: список по датам («Сегодня», «Вчера», «Последние 7/30 дней», месяцы), экран новой
+  беседы с приветствием, в шапке «Беседа · модель», без вкладки «Изменения».
+- Режим чата определяется по папке: всё, что лежит в `~/chat/` (`config.chatRoot`, `AGENTD_CHAT_ROOT`), — беседа
+  (`chat-dirs.ts → isChatDir`, `ChatSummary.mode`). Протокол и старые чаты менять не пришлось; в «Проекты» эти папки не
+  попадают.
+- **Папка на каждую беседу:** `create` с `mode: 'chat'` → сервер сам делает `~/chat/<дата>-<6 hex>` (`newChatDir`). Файлы
+  беседы лежат отдельно; удалить беседу с файлами — удалить папку. Вложения — по-прежнему в общей папке загрузок.
+- **Инструкции беседы:** `~/chat/AGENTS.md` (текст в `chat-dirs.ts`, обновляется при старте демона, пока в файле есть
+  строка-метка; убрать метку — править вручную) и `~/chat/CLAUDE.md` = `@AGENTS.md`. Claude читает его из родительской
+  папки, Codex — по ссылке `AGENTS.md → ../AGENTS.md` в каждой папке беседы (Codex смотрит только в свою папку; ссылка
+  скрыта в панели «Файлы»).
+- **Правила сервера (`DEV-ENVIRONMENT.md`) в беседах:** у Claude их нет — на сервере они подключены через `~/dev/CLAUDE.md`,
+  а не глобально (см. журнал `mcc-server`, 2026-11-12). У Codex глобальный `~/.codex/AGENTS.md` отключить нельзя — в
+  инструкциях беседы сказано не ориентироваться на них.
+- **Настройки новой беседы** не запоминаются: каждый раз Claude Opus (Codex — в одно нажатие), уровень рассуждения по
+  умолчанию, права «Авто» (Claude — `auto`, Codex — `on-request`, «Модель решает»). Режим и последний открытый чат каждого
+  режима помнит браузер (`localStorage.mode`, `store.switchMode`); адрес — `?mode=chat`, `?new=1&mode=chat&agent=codex`.
+- В Telegram-подтверждениях беседы помечены «💭 беседа» вместо папки проекта.
+- Продолжить беседу в терминале: меню чата → «Скопировать команду» (`cd ~/chat/<папка> && claude --resume …`).
+
+## Голосовой ввод
+
+- Кнопка 🎤 в поле ввода (`components/chat/composer.tsx`, логика — `lib/dictation.ts`): `getUserMedia` → `MediaRecorder`
+  (Chrome/Android — `audio/webm;codecs=opus`, Safari/iOS — `audio/mp4`), 64 кбит/с, до 5 минут, индикатор громкости.
+  Повторное нажатие — распознать, «Отмена» / Esc — выбросить. Текст вставляется в место курсора; при `voiceAutoSend` сразу
+  отправляется. На телефоне фокус в поле не ставится — клавиатура не выскакивает.
+- `POST /api/transcribe` (`apps/agentd/src/voice.ts`): тело — сырой звук, `Content-Type` — тип записи; проверка Origin как у
+  `/api/upload`; ключ читается из `~/secrets/openrouter.env` при каждом запросе (в браузер не попадает) → OpenRouter
+  `POST /api/v1/audio/transcriptions` `{model, input_audio: {data: base64, format}, temperature: 0}`, без `language`
+  (автоопределение лучше для русского с английскими словами). Запись не сохраняется. Лимит 20 МБ, таймаут 90 с.
+- Модели — `VOICE_MODELS` в `packages/protocol`: MAI-Transcribe 2 (по умолчанию), GPT Transcribe, Scribe v2, Whisper Large v3.
+  Выбор и `voiceAutoSend` — в `Prefs` (сервер, общие для устройств), окно «Настройки» → «Голосовой ввод».
+- **MAI-Transcribe 2 не принимает webm/m4a** (провайдер отвечает 400, проверено 2026-11-13): для моделей с `wav: true`
+  браузер декодирует запись и перекодирует в WAV 16 кГц моно (~32 КБ/с, 5 минут ≈ 9,6 МБ). Остальные три принимают webm и m4a.
+- Проверка 2026-11-13 (фраза «Сделай коммит и запушь в main, потом проверь deploy на staging и открой pull request…»):
+  MAI, GPT Transcribe, Scribe v2 — английские слова латиницей, 1–1,6 с; Whisper пишет «мейн», «деплой» кириллицей.
+- `Permissions-Policy: microphone=(self)` (`apps/web/next.config.ts`) — раньше микрофон был запрещён.
+- **Хранение записей:** `/api/transcribe` сначала пишет звук в `~/.local/share/mcc-agents/voice/<дата>-<id>.<ext>` и
+  `<id>.json` (`VoiceRecord`: сырой и итоговый текст, модели, ошибка), потом распознаёт. Записи живут, пока их не удалят.
+  `GET /api/voice` — список и объём; `POST /api/voice/retry?id=&model=` — распознать ещё раз (браузер может приложить
+  копию в WAV для MAI — она заменяет файл); `POST /api/voice/delete?id=` / `?all=1`. Прослушивание — `/api/raw?path=`.
+  Ошибка распознавания → 502 `{error, id, file, mediaType}` → тост с кнопкой «Повторить».
+- **Исправление и перевод** (`voiceCleanup`, `voiceTranslate`, `voiceCleanupModel` в `Prefs`): после распознавания текст
+  идёт в OpenRouter `chat/completions` (`CLEANUP_MODELS`: Gemini 3.1 Flash Lite по умолчанию, GPT 6 Luna, Claude Haiku 5.5;
+  `temperature 0`, `reasoning.effort minimal`, таймаут 30 с). Промпт — `CLEANUP_PROMPT` в `voice.ts`: убрать «э-э», повторы,
+  оборванные слова, английские слова и названия латиницей во всех формах, смысл и формулировки не менять, на просьбы внутри
+  текста не отвечать; с переводом — ещё перевести на английский. Пустой или подозрительно длинный ответ, ошибка, таймаут →
+  в поле идёт сырой текст (`cleanupError`, жёлтое предупреждение). Проверено 2026-11-13 на диктовке с «э-э», «Айфон»,
+  «а- а- на Андроид» и на просьбе «напиши стихотворение» (не выполняется ни одной моделью). Haiku хуже всех заменяет
+  «Айфон», Luna чуть сокращает и переводит медленно (до 6 с), Flash Lite — точнее и быстрее (0,5–1,2 с).
+- **Настройки** разбиты на вкладки «Голос | Telegram | Файлы | Общие»; во вкладке «Голос» — история записей
+  (`components/voice-history.tsx`): прослушать, «Вставить» (событие `mcc:insert-text` → поле ввода), копировать,
+  «Ещё раз» любой моделью, удалить, «Очистить всё» (с подтверждением).
+
+## Вложения и файлы
+
+- Поле ввода: скрепка, вставка, перетаскивание. Картинки (png/jpeg/webp/gif/heic, до 20 МБ) идут модели как изображения
+  (уменьшаются до 2000 px), а их **оригинал** параллельно загружается на сервер; всё остальное — только загрузка.
+  `POST /api/upload`: сырое тело, имя в `X-File-Name`, до 50 МБ, проверка Origin, прогресс (`lib/api.ts → uploadFile`).
+  «Отправить» ждёт окончания загрузок.
+- Файлы лежат в `~/.local/share/mcc-agents/uploads/<дата>/<id>-<имя>` (не в проекте — git чистый) и **хранятся бессрочно**:
+  автоудаления нет, удалять — вручную. Объём виден в «Настройках» (`GET /api/uploads`), сами файлы — в панели «Файлы» →
+  «Вложения». Claude запускается с `--add-dir` на эту папку; Codex работает без песочницы.
+- Агенту файлы передаются текстом: к сообщению дописывается блок `<attached_files>` с путями (`uploads.ts → textWithFiles`);
+  оригиналы картинок там помечены «уже приложена к сообщению», чтобы модель не читала их повторно. При загрузке истории
+  блок вырезается обратно в `UserItem.files` (`splitFiles`). В `textWithFiles` пропускаются только пути внутри папки загрузок.
+- **Отдача файлов** — `GET|HEAD /api/raw?path=…[&dl=1][&thumb=1][&name=…]` (`raw.ts`), только пути из `allowedPath`
+  (домашняя папка и `/tmp`):
+  - картинки, PDF, аудио и видео — `inline`; текст любого вида (в том числе `.html`) —
+    `text/plain`, чтобы файл из проекта не стал страницей на нашем домене (svg — картинкой, в песочнице); офисные документы, архивы и прочее — `attachment`; `dl=1` — всегда `attachment`;
+  - имя в `Content-Disposition` с `filename*=UTF-8''…` (кириллица), у загрузок без префикса `<id>-`;
+  - защита: `nosniff`, `Cross-Origin-Resource-Policy: same-origin`, `CSP: sandbox` (кроме PDF — Chrome не рисует PDF в
+    песочнице); `Range` (видео на iOS), `ETag`/304; загрузки кешируются навсегда (`immutable`), файлы проекта — `no-cache`;
+  - `thumb=1` — JPEG 640 px через Pillow (`python3 -I`), кеш в `~/.local/share/mcc-agents/thumbs/`; для маленьких
+    картинок и форматов, которые Pillow не знает, отдаётся оригинал.
+- **Просмотрщик** (`components/file-viewer.tsx`, состояние `ui.viewer`): на телефоне на весь экран, на компьютере — большое
+  окно. Картинка (нажатие — 100 %), PDF во встроенном просмотрщике браузера (на iPhone — карточка), видео, аудио, текст и код
+  с подсветкой; Word/Excel/архивы — карточка. Кнопки: «Скачать» (`dl=1`) и на телефонах «Поделиться» (Web Share API с
+  файлом — «Сохранить в Файлы», открыть в Word/Pages; файл скачивается заранее, до 40 МБ, чтобы лист открылся в рамках нажатия).
+- Что открывается в просмотрщике: плашки и картинки в сообщениях пользователя; пути к файлам в ответах агента (`код` и
+  ссылки — `looksLikeFile` + `resolvePath` от папки чата, `FileBase` в `markdown.tsx`); кнопки 👁/⬇ в заголовках правок и в
+  карточках чтения; документы и картинки из панели «Файлы» (текст/код там же в панели, плюс «Скачать»).
+- Проверка: `node scripts/files-test.mjs /run/mcc-agents/local.sock claude|codex <файл>`.
+
+## Непрочитанные
+
+- `lastSeen` хранится в `state.json` — одна отметка на все устройства; ставится, когда чат открыт и виден (`seen`),
+  при отправке сообщения и в конце хода, если чат кто-то смотрит.
+- Непрочитан: `lastSeen` есть, `updatedAt > lastSeen + 3 c`, чат простаивает. Чаты, ни разу не открытые в оболочке, — нет.
+- `updatedAt` двигает `Chat.setStatus` только на реальной активности (ход начался / ждёт подтверждения / закончился /
+  ошибка), не на `starting → idle` и `idle → idle` (закрытие простаивающего процесса). При сканировании Claude берётся
+  время последней строки `user`/`assistant` в `.jsonl`, а не mtime: при выходе CLI дописывает служебные строки.
+
+## Протокол (`packages/protocol`)
+
+Всё, что видит интерфейс, — `ChatItem`: `user`, `assistant`, `thinking`, `tool` (категория, заголовок, ввод, вывод,
+статус, diff, `parentId` для субагентов), `notice`. Плюс live-состояние чата: `approvals`, `usage`, `tasks`, `todos`,
+`settings`, `live`, `busyElsewhere`, `error`.
+
+WebSocket `/ws`: клиент → `subscribe/unsubscribe/visible/create/send/interrupt/decide/settings/stopTask/meta/seen/release`;
+сервер → `chats/chat/chatRemoved/limits/snapshot/item/delta/state/created/error`.
+
+HTTP `/api`: `POST upload` (вложения), `raw?path` (отдача файлов), `uploads` (объём вложений), `health`, `projects`, `caps?agent&cwd`, `files?cwd&q`, `ls?path`, `file?path`, `git?cwd`,
+`output?chatId&itemId` (полный вывод усечённого инструмента), `task-output?chatId&taskId`. Пути — только внутри `$HOME` и `/tmp`.
+
+## Веб (`apps/web/src`)
+
+- `lib/store.ts` — WebSocket с переподключением (и «пробуждением» после сна телефона), состояние, маршрут (`?chat=`, `?new=1&cwd=&agent=`), дельты сливаются раз в кадр.
+- `components/app.tsx` — каркас: shadcn `Sidebar` (на телефоне — выезжающий Sheet), чат, правая панель (на телефоне — Sheet на весь экран).
+- `components/chat/*` — `chat-view` (шапка, баннеры), `message-list` (автопрокрутка, дерево субагентов), `items` (карточки
+  инструментов), `approval-panel`, `composer` (`/` команды, `@` файлы, картинки, модель/усилие/режим, Esc — стоп),
+  `todo-bar`, `status-bar` (контекст, лимиты, фоновые задачи), `new-chat`.
+- `components/panel/side-panel.tsx` — изменения git, файлы, фоновые задачи (вывод обновляется раз в 2 с).
+- `hooks/use-app-viewport.ts` — высота приложения = visualViewport (iOS: поле ввода над клавиатурой).
+
+## Уведомления и подтверждения в Telegram
+
+- **Ход закончился**, а чат никто не смотрит (вкладка скрыта / другой чат) — `notify` (бот сервера) со ссылкой на чат.
+  Не чаще раза в 20 с на чат. Отключить: `AGENTD_NOTIFY=0`.
+- **Агент ждёт ответа** (подтверждение, вопрос, план) и в вебе не ответили за `prefs.telegramDelaySec` (по умолчанию 60 с,
+  настройка в окне «Настройки») — сообщение с кнопками от **отдельного бота агентов** (`telegram.ts`, `tg-approvals.ts`):
+  - команда / правка / прочее: «Разрешить», «Отклонить» и до двух вариантов из `Approval.options` («до конца сессии», «всегда…»);
+  - вопрос с одним выбором — кнопка на каждый вариант; несколько вопросов / мультивыбор / свой ответ — только в вебе;
+  - план — «Начать» (и «Начать + принимать правки»); замечания — в вебе;
+  - всегда кнопка-ссылка «Открыть чат».
+- Ответ в одном месте отражается в другом: решение из веба (`hub.handle('decide')`) и из Telegram (`onCallback`) пишется в
+  `TgApprovals.record`, а когда запрос исчезает из `chat.state.approvals` (`Chat.patch` → `sink.approvalRemoved`), сообщение
+  редактируется: «✅ Разрешено в вебе / в Telegram», «⛔ Отклонено…», «💬 Ответ…» или «⌛ Неактуально» (ход прерван, процесс закрыт).
+  Отправленные сообщения хранятся в `state.json` (`tgMessages`); после рестарта демона они помечаются «неактуально».
+- Почему отдельный бот: бот сервера `@<бот_сервера>` использует `ops`, который читает нажатия через `getUpdates` и держит
+  смещение в недоступной `dev` папке; два читателя одного бота крали бы нажатия друг у друга. Принимаются только нажатия
+  из `TELEGRAM_CHAT_ID`. Токен подхватывается без рестарта (проверка раз в минуту).
+- Без токена бота агентов — прежнее поведение: сразу `notify` «нужно подтверждение», если чат никто не смотрит.
+
+## Вход, тема, ширина панелей
+
+- Вход — общий для сайтов `*.mcc` сервис `mcc-auth` (nginx `auth_request`, cookie `mcc_session`). Демон и Next о нём не знают;
+  веб при 401 от `/api` (или когда WebSocket не поднимается и `/api/health` → 401) уводит на `https://auth.mcc.example.com/login?rd=…`
+  (`lib/auth.ts`). Туннель `local.sock` — без входа.
+- Тема — cookie `theme` (`light` по умолчанию / `dark`, домен `.mcc.example.com`): `app/layout.tsx` читает её на сервере и
+  ставит класс `dark` на `<html>` — без мигания; переключение — `lib/theme.ts`.
+- Ширина панелей — `components/resize-handle.tsx`: перетаскивание меняет CSS-переменные `--sidebar-w` (220–480 px) и
+  `--panel-w` (320 px – 70% экрана) на `<html>`, значение — в cookie `mcc_sidebar_w` / `mcc_panel_w` (layout ставит их при
+  рендере). Двойной клик — по умолчанию. На телефоне панели — выезжающие Sheet, ширина не меняется.
+- Просмотр файлов — `components/code-view.tsx`: Shiki (`github-light`/`github-dark` через CSS-переменные, языки грузятся
+  по требованию, файлы > 300 КБ без подсветки), номера строк, перенос строк (кнопка в шапке панели, `localStorage.panelWrap`;
+  тот же переключатель — для diff в панели «Изменения»).
+
+## Приложение на экране «Домой» (iOS)
+
+- `appleWebApp.statusBarStyle: 'black-translucent'` (`app/layout.tsx`): страница идёт под строку статуса, `env(safe-area-inset-top)` =
+  настоящий отступ (62 pt на iPhone 17 Pro), шапки (`.pt-safe`) опускаются под строку статуса. Со стилем `default` отступ был 0, а
+  в iOS 26 у верхнего края приложения рисуется размытие Liquid Glass — заголовок шапки попадал под него.
+- Высота приложения — `hooks/use-app-viewport.ts` → `--app-h` / `--app-top` / `data-keyboard`. Без клавиатуры в режиме
+  веб-приложения берётся `100lvh` (iOS 26 занижает innerHeight/visualViewport/dvh на высоту строки статуса). «Клавиатура
+  открыта» = в фокусе поле ввода и visualViewport заметно короче экрана — на innerHeight не опираемся (в разных версиях iOS
+  он то сжимается с клавиатурой, то нет). Если iOS сдвигает visualViewport (offsetTop), приложение сдвигается за ним
+  (`transform` у `.app-h`). Пересчёт — по событиям visualViewport и по focusin/focusout с повторами (клавиатура выезжает
+  с анимацией, у сторонних клавиатур события приходят поздно). Выезжающие панели и подложки диалогов — по `--app-h`.
+  При открытой клавиатуре `.pb-safe` не добавляет отступ полоски «Домой».
+- Диагностика: «Настройки → Диагностика → Показать размеры экрана» (или `?debug=1`) — плашка с размерами viewport,
+  safe area, состоянием клавиатуры и `--app-h` (`components/debug-overlay.tsx`).
+- Иконки: `app/icon.tsx`, `app/apple-icon.tsx` (квадрат без скругления — iOS скругляет сам), `app/app-icon/[variant]` —
+  192, 512 и `maskable` (с безопасной зоной) для manifest; рисунок — `lib/app-icon.tsx`. Иконки и manifest открыты без входа (nginx).
+- **Размытие верха (iOS 26/27, только на реальном устройстве):** система размывает верхний край веб-приложения на экране
+  «Домой» (Liquid Glass scroll edge effect, зона ~строка статуса + 36 pt). Выключателя у веба нет; обходы стоят ~36 pt экрана
+  (сплошная полоса на всю зону, шапка ниже), пробовали — выглядит хуже. Решение пользователя: оставить вёрстку как есть,
+  а на телефоне включить «Универсальный доступ → Дисплей и размер текста → Понижение прозрачности» — размытие пропадает.
+- В приложении нет адресной строки — «Обновить» есть в меню чата и в подвале сайдбара.
+- После смены иконки/manifest приложение на экране «Домой» нужно удалить и добавить заново: iOS кэширует их при добавлении.
