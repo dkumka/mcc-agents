@@ -12,6 +12,10 @@ export function baseName(p: string): string {
   return parts[parts.length - 1] ?? p;
 }
 
+export function projectLabel(p: string, fallback = baseName(p)): string {
+  return p === HOME + '/dev/mcc' ? 'MCC, Agents' : fallback;
+}
+
 export function timeAgo(ms: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
   if (s < 45) return 'сейчас';

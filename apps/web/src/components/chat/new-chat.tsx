@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { api } from '@/lib/api';
-import { shortPath } from '@/lib/format';
+import { projectLabel, shortPath } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { useCaps } from './chat-view';
@@ -70,7 +70,7 @@ function ProjectPicker({ value, onChange, projects }: { value: string; onChange:
               {projects.map((p) => (
                 <CommandItem
                   key={p.path}
-                  value={`${p.name} ${p.path}`}
+                  value={`${projectLabel(p.path, p.name)} ${p.path}`}
                   onSelect={() => {
                     onChange(p.path);
                     setOpen(false);
@@ -79,7 +79,7 @@ function ProjectPicker({ value, onChange, projects }: { value: string; onChange:
                 >
                   {p.isGit ? <GitBranchIcon /> : <FolderIcon />}
                   <span className="min-w-0 flex-1 truncate">
-                    {p.name}
+                    {projectLabel(p.path, p.name)}
                     <span className="ml-2 text-xs text-muted-foreground">{shortPath(p.path)}</span>
                   </span>
                   {p.chatCount > 0 && <span className="text-xs text-muted-foreground tabular">{p.chatCount}</span>}
@@ -261,7 +261,7 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
     });
   }, [caps, agent]);
 
-  const projectName = useMemo(() => projects.find((p) => p.path === cwd)?.name ?? shortPath(cwd), [projects, cwd]);
+  const projectName = useMemo(() => projectLabel(cwd, projects.find((p) => p.path === cwd)?.name ?? shortPath(cwd)), [projects, cwd]);
 
   const onSend = async (p: SendPayload) => {
     if (!cwd) {

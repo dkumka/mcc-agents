@@ -22,7 +22,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { baseName, shortPath, timeAgo } from '@/lib/format';
+import { projectLabel, shortPath, timeAgo } from '@/lib/format';
 import { modeOf, store, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
@@ -196,7 +196,7 @@ export function AppSidebar() {
             <SidebarGroup key={cwd} className="py-1">
               <SidebarGroupLabel className="cursor-pointer select-none gap-1 pr-8" title={cwd} onClick={() => setCollapsed((s) => ({ ...s, [cwd]: !s[cwd] }))}>
                 <ChevronRightIcon className={cn('size-3 transition-transform', !isCollapsed && 'rotate-90')} />
-                <span className="truncate">{baseName(cwd) || cwd}</span>
+                <span className="truncate">{projectLabel(cwd) || cwd}</span>
                 <span className="ml-1 truncate font-normal opacity-60">{shortPath(cwd).replace(/\/[^/]+$/, '')}</span>
               </SidebarGroupLabel>
               <SidebarGroupAction title="Новый чат в этом проекте" onClick={() => newChat(cwd)} className="size-7 md:size-5">
