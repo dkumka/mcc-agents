@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import tempfile
 import urllib.request
 from datetime import datetime, timezone
@@ -12,8 +13,8 @@ from datetime import datetime, timezone
 
 def main():
     token = getpass.getpass('Токен отдельного бота MCC Agents (скрыт): ').strip()
-    chat = getpass.getpass('Личный Telegram chat ID (скрыт): ').strip()
-    if not re.fullmatch(r'\d+:[A-Za-z0-9_-]+', token) or not re.fullmatch(r'[1-9]\d*', chat):
+    chat = getpass.getpass('Личный Telegram chat ID (Enter — определить автоматически): ').strip()
+    if not re.fullmatch(r'\d+:[A-Za-z0-9_-]+', token) or (chat and not re.fullmatch(r'[1-9]\d*', chat)):
         raise ValueError('Неверный формат токена или личного chat ID')
 
     def api(method, body):
@@ -27,6 +28,28 @@ def main():
         return data['result']
 
     api('getMe', {})
+    if api('getWebhookInfo', {}).get('url'):
+        raise ValueError('Нужен отдельный бот без webhook')
+    if not chat:
+        # Never start a second getUpdates reader for an already configured daemon.
+        if (Path.home() / 'secrets/agents-telegram.env').exists():
+            print('Для уже настроенного бота введите chat ID вручную.')
+            return
+        code = 'MCC-' + secrets.token_hex(4)
+        print('Отправьте созданному боту в личном чате это сообщение:', code)
+        input('После отправки нажмите Enter здесь: ')
+        updates = api('getUpdates', {'timeout': 0, 'limit': 100, 'allowed_updates': ['message', 'callback_query']})
+        ids = set()
+        for update in updates:
+            message = update.get('message', {})
+            peer = message.get('chat', {})
+            if (message.get('text') == code and peer.get('type') == 'private'
+                    and peer.get('id') == message.get('from', {}).get('id')):
+                ids.add(str(peer['id']))
+        if len(ids) != 1:
+            print('Сообщение привязки не найдено однозначно. Запустите настройку заново.')
+            return
+        chat = ids.pop()
     target = api('getChat', {'chat_id': chat})
     if target.get('type') != 'private':
         raise ValueError('Нужен личный чат с ботом. Откройте бота и нажмите Start.')
