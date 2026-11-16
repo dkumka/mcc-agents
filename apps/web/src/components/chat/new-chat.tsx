@@ -115,6 +115,12 @@ function lastSettings(agent: AgentKind): ChatSettings {
   }
 }
 
+/** The «decide yourself, ask only about risky things» mode: Claude `auto`, Codex `on-request`. */
+function autoMode(caps: AgentCapabilities): string | undefined {
+  const has = (m: string) => caps.permissionModes.some((x) => x.id === m);
+  return has('auto') ? 'auto' : has('on-request') ? 'on-request' : caps.defaults.permissionMode;
+}
+
 /** Conversations start the same way every time: Claude Opus (or Codex if picked), automatic permissions. */
 function chatDefaults(agent: AgentKind, caps: AgentCapabilities): ChatSettings {
   const ids = caps.models.map((m) => m.id);
@@ -263,7 +269,8 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
     if (initialAgent) setAgent(initialAgent);
   }, [initialAgent]);
 
-  // defaults from the CLI, overridden by what was used last time
+  // model and effort: what was used last time; permissions: always «Авто» (Claude) / «Модель решает» (Codex) —
+  // change it in the chip for this chat if needed
   useEffect(() => {
     if (!caps) return;
     const last = lastSettings(agent);
@@ -271,7 +278,7 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
     setSettings({
       model: last.model && models.includes(last.model) ? last.model : caps.defaults.model,
       effort: last.effort ?? caps.defaults.effort,
-      permissionMode: last.permissionMode && caps.permissionModes.some((m) => m.id === last.permissionMode) ? last.permissionMode : caps.defaults.permissionMode,
+      permissionMode: autoMode(caps),
     });
   }, [caps, agent]);
 

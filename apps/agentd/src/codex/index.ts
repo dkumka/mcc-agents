@@ -291,7 +291,8 @@ export class CodexAdapter implements Adapter {
     chat.state.settings = {
       model: meta.settings?.model ?? r?.model ?? undefined,
       effort: meta.settings?.effort ?? r?.reasoningEffort ?? undefined,
-      permissionMode: meta.settings?.permissionMode ?? (typeof r?.approvalPolicy === 'string' ? r.approvalPolicy : undefined),
+      // not chosen here yet: «Модель решает» (on-request) — like Claude's «Авто»
+      permissionMode: meta.settings?.permissionMode ?? 'on-request',
     };
     const items: ChatItem[] = [];
     let cursor: string | null = null;

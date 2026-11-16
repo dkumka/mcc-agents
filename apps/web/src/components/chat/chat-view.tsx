@@ -29,7 +29,7 @@ import { Input } from '@/components/ui/input';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { capsCached } from '@/lib/api';
-import { baseName, shortPath, terminalCommand } from '@/lib/format';
+import { baseName, matchModel, shortPath, terminalCommand } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
 import { cn } from '@/lib/utils';
@@ -152,7 +152,7 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             {(s.status === 'running' || s.status === 'starting') && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-info" />}
           </div>
           <div className="truncate text-[11px] text-muted-foreground" title={s.cwd}>
-            {isChat ? ['Беседа', caps?.models.find((m) => m.id === (state.settings.model ?? s.model))?.label ?? s.model].filter(Boolean).join(' · ') : `${baseName(s.cwd)} · ${shortPath(s.cwd)}`}
+            {isChat ? ['Беседа', (caps && matchModel(caps.models, state.settings.model ?? s.model)?.label) ?? s.model].filter(Boolean).join(' · ') : `${baseName(s.cwd)} · ${shortPath(s.cwd)}`}
           </div>
         </div>
         {!isChat && <PanelButton tab="changes" icon={GitCompareArrowsIcon} label="Изменения (git)" />}

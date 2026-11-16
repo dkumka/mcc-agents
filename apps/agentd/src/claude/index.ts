@@ -518,7 +518,8 @@ export class ClaudeAdapter implements Adapter {
       chat.state.usage = { contextTokens: ctx, contextWindow: win, percent: win ? Math.round((ctx / win) * 100) : 0 };
     }
     const meta = store.meta(chat.id);
-    chat.state.settings = { model: meta.settings?.model ?? norm.lastModel, effort: meta.settings?.effort, permissionMode: meta.settings?.permissionMode };
+    // no mode chosen here yet (a terminal / CloudCLI session): «Авто», not the CLI's «ask about everything»
+    chat.state.settings = { model: meta.settings?.model ?? norm.lastModel, effort: meta.settings?.effort, permissionMode: meta.settings?.permissionMode ?? 'auto' };
   }
 
   private ensure(chat: Chat, resume: boolean): ClaudeProc {

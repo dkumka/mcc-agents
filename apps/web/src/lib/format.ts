@@ -64,3 +64,17 @@ export function duration(ms?: number | null): string {
 export function terminalCommand(agent: 'claude' | 'codex', nativeId: string, cwd: string): string {
   return agent === 'claude' ? `cd ${cwd} && claude --resume ${nativeId}` : `cd ${cwd} && codex resume ${nativeId}`;
 }
+
+/**
+ * The CLI's model entry for a settings value. History gives full ids (`claude-opus-5-5`) while the menu has aliases
+ * (`opus` = «Opus 5.5») and older versions (`claude-opus-5` = «Opus 5»): match the exact id, then the label
+ * («Opus 5.5» ↔ `opus-5-5`), never «contains» — `claude-opus-5-5` would pick «Opus 5».
+ */
+export function matchModel<T extends { id: string; label: string; isDefault?: boolean }>(models: T[], id?: string): T | undefined {
+  if (!id) return undefined;
+  const exact = models.find((m) => m.id === id);
+  if (exact) return exact;
+  const slug = (s: string) => s.toLowerCase().replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/[\s.]+/g, '-');
+  const want = slug(id);
+  return models.find((m) => m.id !== 'default' && (slug(m.label) === want || slug(m.id) === want));
+}

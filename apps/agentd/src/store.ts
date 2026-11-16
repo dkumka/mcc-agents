@@ -31,6 +31,7 @@ interface StoreData {
   tgOffset: number;
   /** Approval messages sent to Telegram: short key → where it points and what was sent. */
   tgMessages: Record<string, TgMessage>;
+  autoModeMigrated?: boolean;
 }
 
 export interface TgMessage {
@@ -51,9 +52,34 @@ export function loadStore() {
     fs.mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     data = { ...data, ...raw, prefs: { ...DEFAULT_PREFS, ...(raw.prefs ?? {}) } };
+    migrateAutoMode();
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('cannot read state', e);
   }
+}
+
+/**
+ * 2026-11-16: «Авто» became the default. Chats that got «Спрашивать» only because it used to be the default
+ * (Claude `default`, Codex `untrusted`) switch to «Авто» / «Модель решает» once.
+ */
+function migrateAutoMode() {
+  if (data.autoModeMigrated) return;
+  let n = 0;
+  for (const [id, m] of Object.entries(data.meta)) {
+    const pm = m.settings?.permissionMode;
+    const to = id.startsWith('claude:') && pm === 'default' ? 'auto' : id.startsWith('codex:') && pm === 'untrusted' ? 'on-request' : null;
+    if (to && m.settings) {
+      m.settings = { ...m.settings, permissionMode: to };
+      n++;
+    }
+  }
+  for (const [agent, s] of Object.entries(data.lastSettings ?? {})) {
+    if (agent === 'claude' && s.permissionMode === 'default') s.permissionMode = 'auto';
+    if (agent === 'codex' && s.permissionMode === 'untrusted') s.permissionMode = 'on-request';
+  }
+  data.autoModeMigrated = true;
+  log.info(`auto mode by default: ${n} chat(s) switched from «Спрашивать»`);
+  save();
 }
 
 function save() {
