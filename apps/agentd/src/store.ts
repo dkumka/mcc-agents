@@ -17,6 +17,8 @@ export interface ChatMeta {
   forkOf?: string;
   rewoundFrom?: string;
   hidden?: boolean;
+  /** «Архив»: not in the main list; history and files untouched. */
+  archived?: boolean;
 }
 
 interface StoreData {

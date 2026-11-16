@@ -114,6 +114,7 @@ export class Hub implements ChatSink {
     if (meta.forkOf) out.forkOf = meta.forkOf;
     if (meta.rewoundFrom) out.rewoundFrom = meta.rewoundFrom;
     if (meta.hidden) out.hidden = true;
+    if (meta.archived) out.archived = true;
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
   }
@@ -420,6 +421,11 @@ export class Hub implements ChatSink {
       }
       case 'send': {
         const chat = this.need(msg.chatId);
+        // writing to an archived chat brings it back to the list
+        if (store.meta(chat.id).archived) {
+          store.setMeta(chat.id, { archived: undefined });
+          this.summaryChanged(chat);
+        }
         await this.ensureLoaded(chat);
         const uuid = randomUUID();
         chat.upsert(this.userItem(uuid, msg.message));
@@ -479,9 +485,14 @@ export class Hub implements ChatSink {
       }
       case 'meta': {
         const chat = this.need(msg.chatId);
-        const patch: { pinned?: boolean; title?: string } = {};
+        const patch: { pinned?: boolean; title?: string; archived?: boolean } = {};
         if (msg.pinned !== undefined) patch.pinned = msg.pinned;
         if (msg.title !== undefined) patch.title = msg.title.trim() || undefined;
+        if (msg.archived !== undefined) {
+          patch.archived = msg.archived || undefined;
+          // an archived chat is out of the way: not pinned either
+          if (msg.archived) patch.pinned = false;
+        }
         store.setMeta(chat.id, patch);
         this.summaryChanged(chat);
         return;

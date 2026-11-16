@@ -18,6 +18,8 @@ import {
   GitBranchIcon,
   Undo2Icon,
   XIcon,
+  ArchiveIcon,
+  ArchiveRestoreIcon,
 } from 'lucide-react';
 import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/protocol';
 import { AgentMark } from '@/components/agent-badge';
@@ -29,6 +31,7 @@ import { Input } from '@/components/ui/input';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { capsCached } from '@/lib/api';
+import { setArchived } from '@/lib/archive';
 import { baseName, matchModel, shortPath, terminalCommand } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
@@ -69,7 +72,7 @@ function PanelButton({ tab, icon: Icon, label, badge }: { tab: PanelTab; icon: t
   );
 }
 
-function RenameDialog({ open, onOpenChange, chatId, title }: { open: boolean; onOpenChange: (v: boolean) => void; chatId: string; title: string }) {
+export function RenameDialog({ open, onOpenChange, chatId, title }: { open: boolean; onOpenChange: (v: boolean) => void; chatId: string; title: string }) {
   const [v, setV] = useState(title);
   useEffect(() => setV(title), [title, open]);
   return (
@@ -183,6 +186,9 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             >
               <GitBranchIcon /> Форк чата…
             </DropdownMenuItem>
+            <DropdownMenuItem className="py-2.5" onClick={() => setArchived(s.id, !s.archived)}>
+              {s.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />} {s.archived ? 'Вернуть из архива' : 'В архив'}
+            </DropdownMenuItem>
             <DropdownMenuItem className="py-2.5" onClick={() => window.location.reload()}>
               <RefreshCwIcon /> Обновить страницу
             </DropdownMenuItem>
@@ -241,6 +247,15 @@ export function ChatView({ chatId }: { chatId: string }) {
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <Header state={state} caps={caps} />
       {s.rewoundFrom && <RewindBanner chatId={chatId} from={s.rewoundFrom} />}
+      {s.archived && (
+        <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground md:px-4">
+          <ArchiveIcon className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">Чат в архиве. Новое сообщение вернёт его в список.</span>
+          <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-xs" onClick={() => setArchived(s.id, false)}>
+            Вернуть
+          </Button>
+        </div>
+      )}
       {(state.error || state.busyElsewhere) && (
         <div className="flex shrink-0 items-start gap-2 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />

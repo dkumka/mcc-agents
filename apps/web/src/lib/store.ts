@@ -414,7 +414,7 @@ class Store {
     this.send({ t: 'prefs', prefs: p });
   }
 
-  meta(chatId: string, m: { pinned?: boolean; title?: string }) {
+  meta(chatId: string, m: { pinned?: boolean; title?: string; archived?: boolean }) {
     this.send({ t: 'meta', chatId, ...m });
   }
 

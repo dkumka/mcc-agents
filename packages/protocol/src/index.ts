@@ -32,6 +32,8 @@ export interface ChatSummary {
   rewoundFrom?: ChatId;
   /** Kept on disk but not listed (the original of a rollback, or a rollback that was undone). */
   hidden?: boolean;
+  /** In the «Архив» section of the list: out of the way, nothing deleted. A new message brings it back. */
+  archived?: boolean;
 }
 
 export type ChatMode = 'chat' | 'code';
@@ -388,7 +390,7 @@ export type ClientMessage =
   | { t: 'decide'; chatId: ChatId; decision: ApprovalDecision }
   | { t: 'settings'; chatId: ChatId; settings: ChatSettings }
   | { t: 'stopTask'; chatId: ChatId; taskId: string }
-  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string }
+  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string; archived?: boolean }
   | { t: 'seen'; chatId: ChatId }
   | { t: 'release'; chatId: ChatId }
   | { t: 'prefs'; prefs: Partial<Prefs> }
