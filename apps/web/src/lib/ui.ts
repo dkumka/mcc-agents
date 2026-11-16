@@ -14,14 +14,22 @@ export interface ViewerFile {
   preview?: string;
 }
 
+/** «Форк» dialog: branch `chatId` before the user message `beforeItemId` (whose text goes into the new chat's field). */
+export interface ForkRequest {
+  chatId: string;
+  beforeItemId?: string;
+  text?: string;
+}
+
 interface UiState {
+  fork: ForkRequest | null;
   panel: PanelTab | null;
   /** Wrap long lines in the side panel (files, diffs). */
   wrap: boolean;
   viewer: ViewerFile | null;
 }
 
-let state: UiState = { panel: null, wrap: true, viewer: null };
+let state: UiState = { fork: null, panel: null, wrap: true, viewer: null };
 if (typeof window !== 'undefined') state.wrap = localStorage.getItem('panelWrap') !== '0';
 const listeners = new Set<() => void>();
 

@@ -227,3 +227,27 @@ export async function loadClaudeHistory(chat: Chat, file: string): Promise<Claud
   }
   return norm;
 }
+
+/**
+ * Fork a session without the CLI: copy its .jsonl up to (not including) the user message `beforeUuid` under a new
+ * session id — exactly what `claude --resume … --fork-session` keeps, but cut at any point and with no API call.
+ * Lines are kept byte for byte except the `sessionId`; a `custom-title` line names the branch (also in `claude --resume`).
+ */
+export function forkSessionFile(sessionId: string, newId: string, title: string, beforeUuid?: string): string {
+  const file = sessionFile(sessionId);
+  if (!file) throw new Error('файл сессии не найден');
+  const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
+  let end = lines.length;
+  if (beforeUuid) {
+    // `"uuid":"…"` (lower-case u) is the line's own id; `"parentUuid":"…"` does not match it
+    end = lines.findIndex((l) => l.includes(`"uuid":"${beforeUuid}"`));
+    if (end < 0) throw new Error('сообщение не найдено в истории Claude');
+  }
+  const kept = lines.slice(0, end);
+  if (!kept.some((l) => l.includes('"type":"assistant"'))) throw new Error('до этого сообщения разговора ещё нет — начните новый чат');
+  const out = kept.map((l) => l.split(`"sessionId":"${sessionId}"`).join(`"sessionId":"${newId}"`));
+  out.push(JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: newId }));
+  const dest = path.join(path.dirname(file), `${newId}.jsonl`);
+  fs.writeFileSync(dest, out.join('\n') + '\n', { mode: 0o600, flag: 'wx' });
+  return dest;
+}

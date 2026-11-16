@@ -14,6 +14,9 @@ export interface ChatMeta {
   settings?: ChatSettings;
   /** Created from this UI (Codex threads don't carry our entrypoint reliably). */
   web?: boolean;
+  forkOf?: string;
+  rewoundFrom?: string;
+  hidden?: boolean;
 }
 
 interface StoreData {

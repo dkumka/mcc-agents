@@ -363,6 +363,27 @@ class Store {
     });
   }
 
+  /** Branch a chat (dialogue only). `rewind`: the branch replaces it in the list, the original can be brought back. */
+  fork(chatId: string, title: string, beforeItemId?: string, rewind = false): Promise<string> {
+    const reqId = Math.random().toString(36).slice(2);
+    return new Promise((resolve, reject) => {
+      if (!this.send({ t: 'fork', reqId, chatId, title, beforeItemId, rewind })) return reject(new Error('Нет соединения с сервером'));
+      const timer = setTimeout(() => {
+        this.waitingCreate.delete(reqId);
+        reject(new Error('Сервер не ответил'));
+      }, 60_000);
+      this.waitingCreate.set(reqId, (id, err) => {
+        clearTimeout(timer);
+        if (id) resolve(id);
+        else reject(new Error(err ?? 'Не удалось сделать ветку'));
+      });
+    });
+  }
+
+  unrewind(chatId: string) {
+    return this.send({ t: 'unrewind', chatId });
+  }
+
   sendMessage(chatId: string, message: SendPayload) {
     return this.send({ t: 'send', chatId, message });
   }

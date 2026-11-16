@@ -35,6 +35,8 @@ export interface Adapter {
   list(): Promise<ChatSummary[]>;
   load(chat: Chat): Promise<void>;
   prepare(cwd: string, settings: ChatSettings): Promise<string>;
+  /** Copy the dialogue into a new session (up to, not including, the user message `beforeItemId`); returns its native id. */
+  fork(chat: Chat, title: string, beforeItemId?: string): Promise<string>;
   send(chat: Chat, message: SendPayload, uuid: string, isNew: boolean): Promise<void>;
   interrupt(chat: Chat): Promise<void>;
   decide(chat: Chat, d: ApprovalDecision): Promise<void>;
@@ -109,6 +111,9 @@ export class Hub implements ChatSink {
     out.pinned = !!meta.pinned;
     out.mode = isChatDir(out.cwd) ? 'chat' : 'code';
     if (meta.web && out.origin !== 'web') out.origin = 'web';
+    if (meta.forkOf) out.forkOf = meta.forkOf;
+    if (meta.rewoundFrom) out.rewoundFrom = meta.rewoundFrom;
+    if (meta.hidden) out.hidden = true;
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
   }
@@ -372,6 +377,45 @@ export class Hub implements ChatSink {
           chat.notice('error', (e as Error).message);
           chat.setStatus('error');
         }
+        return;
+      }
+      case 'fork': {
+        const src = this.need(msg.chatId);
+        if (src.summary.status === 'running' || src.summary.status === 'starting' || src.summary.status === 'waiting')
+          throw new Error('Агент ещё работает — дождитесь конца ответа или остановите его');
+        const title = msg.title.trim().slice(0, 140) || src.summary.title;
+        const nativeId = await this.adapters[src.agent].fork(src, title, msg.beforeItemId);
+        const id = `${src.agent}:${nativeId}`;
+        await this.refresh();
+        if (!this.chats.has(id)) {
+          // not listed yet (Codex may index a moment later): show it right away
+          const now = Date.now();
+          this.chats.set(id, new Chat({ ...src.summary, id, nativeId, title, createdAt: now, updatedAt: now, status: 'idle', origin: 'web' }, this));
+        }
+        const srcMeta = store.meta(src.id);
+        store.setMeta(id, {
+          web: true,
+          title,
+          settings: srcMeta.settings ?? src.state.settings,
+          lastSeen: Date.now(),
+          ...(msg.rewind ? { rewoundFrom: src.id } : { forkOf: src.id }),
+        });
+        if (msg.rewind) store.setMeta(src.id, { hidden: true });
+        log.info(`${msg.rewind ? 'rewind' : 'fork'} ${src.id} → ${id}${msg.beforeItemId ? ` before ${msg.beforeItemId}` : ''}`);
+        this.summaryChanged(this.chats.get(id)!);
+        this.summaryChanged(src);
+        client.send({ t: 'created', reqId: msg.reqId, chatId: id });
+        return;
+      }
+      case 'unrewind': {
+        const chat = this.need(msg.chatId);
+        const orig = store.meta(chat.id).rewoundFrom;
+        if (!orig || !this.chats.has(orig)) throw new Error('исходный чат не найден');
+        store.setMeta(orig, { hidden: false });
+        store.setMeta(chat.id, { hidden: true });
+        log.info(`unrewind ${chat.id} → ${orig}`);
+        this.summaryChanged(this.chats.get(orig)!);
+        this.summaryChanged(chat);
         return;
       }
       case 'send': {

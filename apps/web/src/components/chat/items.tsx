@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useState, type ReactNode } from 'react';
+import { createContext, memo, useContext, useState, type ReactNode } from 'react';
 import {
   BotIcon,
   BrainIcon,
@@ -26,6 +26,8 @@ import {
   XIcon,
 } from 'lucide-react';
 import type { ChatItem, NoticeItem, ThinkingItem, ToolCategory, ToolItem, UserItem } from '@mcc-agents/protocol';
+import { GitBranchIcon as BranchIcon, Undo2Icon } from 'lucide-react';
+import { rewindTo } from '@/components/chat/fork-dialog';
 import { FileDiffView } from '@/components/diff-view';
 import { FileActions, FileTypeIcon } from '@/components/file-viewer';
 import { CopyButton, Markdown } from '@/components/markdown';
@@ -86,7 +88,56 @@ function Thumb({ src, name, onOpen }: { src?: string; name: string; onOpen?: () 
   );
 }
 
+/** What a user message can do: copy, branch from it, roll the dialogue back to it (set by MessageList). */
+export const MessageActions = createContext<{ chatId: string; firstUserId: string | null; busy: boolean } | null>(null);
+
+function UserActions({ item }: { item: UserItem }) {
+  const ctx = useContext(MessageActions);
+  if (!ctx) return null;
+  // before the very first message there is no dialogue to keep
+  const canBranch = item.id !== ctx.firstUserId;
+  const why = ctx.busy ? 'Дождитесь конца ответа' : undefined;
+  const btn =
+    'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40';
+  return (
+    <div className="mt-0.5 flex justify-end gap-0.5 opacity-60 transition-opacity group-hover/user:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/user:opacity-100 [@media(hover:hover)]:focus-within:opacity-100">
+      {item.text && <CopyButton text={item.text} className="h-7 px-1.5" label="Копировать" />}
+      {canBranch && (
+        <>
+          <button
+            type="button"
+            className={btn}
+            disabled={ctx.busy}
+            title={why ?? 'Новый чат с разговором до этого сообщения; исходный не меняется'}
+            onClick={() => ui.set({ fork: { chatId: ctx.chatId, beforeItemId: item.id, text: item.text } })}
+          >
+            <BranchIcon className="size-3.5" /> Форк отсюда
+          </button>
+          <button
+            type="button"
+            className={btn}
+            disabled={ctx.busy}
+            title={why ?? 'Убрать это сообщение и всё после него из разговора (файлы не трогаются); можно вернуть'}
+            onClick={() => rewindTo(ctx.chatId, item.id, item.text)}
+          >
+            <Undo2Icon className="size-3.5" /> Откатиться сюда
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export const UserBubble = memo(function UserBubble({ item }: { item: UserItem }) {
+  return (
+    <div className="group/user">
+      <UserBubbleBody item={item} />
+      <UserActions item={item} />
+    </div>
+  );
+});
+
+const UserBubbleBody = memo(function UserBubbleBody({ item }: { item: UserItem }) {
   const all = item.files ?? [];
   const pics = all.filter((f) => fileKind(f.name, f.mediaType) === 'image');
   const docs = all.filter((f) => !pics.includes(f));

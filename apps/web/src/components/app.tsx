@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { AppSidebar } from '@/components/app-sidebar';
 import { DebugOverlay } from '@/components/debug-overlay';
 import { FileViewer } from '@/components/file-viewer';
+import { ForkDialog } from '@/components/chat/fork-dialog';
 import { ChatView } from '@/components/chat/chat-view';
 import { NewChat } from '@/components/chat/new-chat';
 import { SidePanel } from '@/components/panel/side-panel';
@@ -68,6 +69,7 @@ export function App() {
         </div>
       </SidebarInset>
       <FileViewer />
+      <ForkDialog />
       <DebugOverlay />
     </SidebarProvider>
   );

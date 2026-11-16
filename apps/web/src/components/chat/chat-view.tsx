@@ -15,6 +15,9 @@ import {
   SquareTerminalIcon,
   TerminalIcon,
   TriangleAlertIcon,
+  GitBranchIcon,
+  Undo2Icon,
+  XIcon,
 } from 'lucide-react';
 import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/protocol';
 import { AgentMark } from '@/components/agent-badge';
@@ -96,6 +99,42 @@ function RenameDialog({ open, onOpenChange, chatId, title }: { open: boolean; on
   );
 }
 
+/** In a rolled-back chat: the original is hidden but kept — bring it back in one tap. */
+function RewindBanner({ chatId, from }: { chatId: string; from: string }) {
+  const original = useStore((st) => st.chats[from]);
+  const key = `rewindBanner:${chatId}`;
+  const [closed, setClosed] = useState(() => typeof window !== 'undefined' && localStorage.getItem(key) === '1');
+  if (closed || !original?.hidden) return null;
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground md:px-4">
+      <Undo2Icon className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1">Разговор откачен к более ранней точке. Исходный скрыт, файлы не тронуты.</span>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 shrink-0 px-2 text-xs"
+        onClick={() => {
+          store.unrewind(chatId);
+          store.navigate({ kind: 'chat', chatId: from });
+        }}
+      >
+        Вернуть как было
+      </Button>
+      <button
+        type="button"
+        aria-label="Скрыть"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-muted hover:text-foreground"
+        onClick={() => {
+          localStorage.setItem(key, '1');
+          setClosed(true);
+        }}
+      >
+        <XIcon className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | null }) {
   const s = state.summary;
   const [rename, setRename] = useState(false);
@@ -136,6 +175,13 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             </DropdownMenuItem>
             <DropdownMenuItem className="py-2.5" onClick={() => setRename(true)}>
               <PencilIcon /> Переименовать
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="py-2.5"
+              disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'}
+              onClick={() => ui.set({ fork: { chatId: s.id } })}
+            >
+              <GitBranchIcon /> Форк чата…
             </DropdownMenuItem>
             <DropdownMenuItem className="py-2.5" onClick={() => window.location.reload()}>
               <RefreshCwIcon /> Обновить страницу
@@ -194,6 +240,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <Header state={state} caps={caps} />
+      {s.rewoundFrom && <RewindBanner chatId={chatId} from={s.rewoundFrom} />}
       {(state.error || state.busyElsewhere) && (
         <div className="flex shrink-0 items-start gap-2 border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />

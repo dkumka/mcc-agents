@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronRightIcon, CodeXmlIcon, FolderPlusIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ChevronRightIcon, CodeXmlIcon, FolderPlusIcon, GitBranchIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
@@ -34,6 +34,7 @@ function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPic
       <SidebarMenuButton isActive={active} onClick={onPick} className="h-auto min-h-10 gap-2 py-2 md:min-h-8 md:py-1.5" title={c.title}>
         <AgentMark agent={c.agent} className="opacity-90" />
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold')}>{c.title}</span>
+        {c.forkOf && <GitBranchIcon className="size-3 shrink-0 text-muted-foreground" aria-label="ветка" />}
         <StatusDot status={c.status} unread={c.unread} />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>
       </SidebarMenuButton>
@@ -111,7 +112,8 @@ export function AppSidebar() {
 
   const { pinned, groups, dated } = useMemo(() => {
     const list = Object.values(chats)
-      .filter((c) => (c.mode ?? 'code') === mode)
+      // hidden: the original of a rolled-back chat (or an undone rollback) — kept, not listed; the open one stays visible
+      .filter((c) => (c.mode ?? 'code') === mode && (!c.hidden || c.id === activeId))
       .sort((a, b) => b.updatedAt - a.updatedAt);
     const ql = q.trim().toLowerCase();
     const filtered = ql ? list.filter((c) => c.title.toLowerCase().includes(ql) || (mode === 'code' && c.cwd.toLowerCase().includes(ql))) : list;
@@ -128,7 +130,7 @@ export function AppSidebar() {
     }
     const groups = [...by.entries()].sort((a, b) => b[1][0].updatedAt - a[1][0].updatedAt);
     return { pinned, groups, dated: [...dated.entries()] };
-  }, [chats, q, mode]);
+  }, [chats, q, mode, activeId]);
 
   const pick = (id: string) => {
     store.navigate({ kind: 'chat', chatId: id });

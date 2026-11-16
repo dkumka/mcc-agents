@@ -20,7 +20,7 @@ import { logger } from '../log.ts';
 import { store } from '../store.ts';
 import { classifyClaudeTool } from '../tools.ts';
 import { ClaudeNormalizer } from './normalize.ts';
-import { loadClaudeHistory, scanClaudeSessions, sessionFile } from './sessions.ts';
+import { forkSessionFile, loadClaudeHistory, scanClaudeSessions, sessionFile } from './sessions.ts';
 import { UPLOADS_DIR } from '../uploads.ts';
 
 const log = logger('claude');
@@ -537,6 +537,12 @@ export class ClaudeAdapter implements Adapter {
 
   async prepare(): Promise<string> {
     return randomUUID();
+  }
+
+  async fork(chat: Chat, title: string, beforeItemId?: string): Promise<string> {
+    const id = randomUUID();
+    forkSessionFile(chat.nativeId, id, title, beforeItemId);
+    return id;
   }
 
   async send(chat: Chat, message: SendPayload, uuid: string, isNew: boolean) {

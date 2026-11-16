@@ -333,6 +333,40 @@ export class CodexAdapter implements Adapter {
     return tid;
   }
 
+  /** `thread/fork` through the turn before the one holding the user message `beforeItemId` (or the whole thread). */
+  async fork(chat: Chat, title: string, beforeItemId?: string): Promise<string> {
+    const tid = chat.nativeId;
+    let lastTurnId: string | undefined;
+    if (beforeItemId) {
+      const turns: Json[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 60; page++) {
+        const t: Json = await this.rpc.request('thread/turns/list', { threadId: tid, itemsView: 'full', sortDirection: 'asc', limit: 30, cursor }, 60_000);
+        turns.push(...((t?.data ?? []) as Json[]));
+        cursor = t?.nextCursor ?? null;
+        if (!cursor) break;
+      }
+      const at = turns.findIndex((turn) => ((turn.items ?? []) as Json[]).some((it) => it.type === 'userMessage' && (it.clientId === beforeItemId || it.id === beforeItemId)));
+      if (at < 0) throw new Error('сообщение не найдено в истории Codex');
+      if (at === 0) throw new Error('до этого сообщения разговора ещё нет — начните новый чат');
+      lastTurnId = turns[at - 1].id;
+    }
+    const s = chat.state.settings;
+    const r: Json = await this.rpc.request('thread/fork', {
+      threadId: tid,
+      ...(lastTurnId ? { lastTurnId } : {}),
+      excludeTurns: true,
+      model: s.model || null,
+      approvalPolicy: s.permissionMode || null,
+      sandbox: 'danger-full-access',
+    });
+    const nid = r?.thread?.id;
+    if (!nid) throw new Error('codex не создал ветку');
+    this.loaded.add(nid);
+    await this.rpc.request('thread/name/set', { threadId: nid, name: title }).catch((e) => log.warn('thread/name/set', e));
+    return nid;
+  }
+
   private async input(p: SendPayload): Promise<Json[]> {
     const input: Json[] = [];
     if (p.text) input.push({ type: 'text', text: p.text, text_elements: [] });

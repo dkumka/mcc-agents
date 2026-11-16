@@ -26,6 +26,12 @@ export interface ChatSummary {
   model?: string;
   /** 'chat' — a conversation outside projects (folder ~/chat/<date-id>), 'code' — work in a project. */
   mode?: ChatMode;
+  /** Branched off this chat (a fork). */
+  forkOf?: ChatId;
+  /** This chat is the original's dialogue rolled back to an earlier point; «Вернуть как было» shows `rewoundFrom` again. */
+  rewoundFrom?: ChatId;
+  /** Kept on disk but not listed (the original of a rollback, or a rollback that was undone). */
+  hidden?: boolean;
 }
 
 export type ChatMode = 'chat' | 'code';
@@ -369,6 +375,14 @@ export type ClientMessage =
       settings: ChatSettings;
       message: SendPayload;
     }
+  /**
+   * Branch the dialogue (files are not touched). `beforeItemId` — a user message: the branch keeps everything before it
+   * (absent: the whole chat). `rewind` — the branch replaces the chat: the original is hidden and can be brought back.
+   * Answered with `created` (reqId).
+   */
+  | { t: 'fork'; reqId: string; chatId: ChatId; title: string; beforeItemId?: string; rewind?: boolean }
+  /** Undo a rollback: show the original again, hide this branch. */
+  | { t: 'unrewind'; chatId: ChatId }
   | { t: 'send'; chatId: ChatId; message: SendPayload }
   | { t: 'interrupt'; chatId: ChatId }
   | { t: 'decide'; chatId: ChatId; decision: ApprovalDecision }
