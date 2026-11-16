@@ -10,6 +10,7 @@ import { logger } from './log.ts';
 import { serveRaw } from './raw.ts';
 import { handleUpload, uploadsStats } from './uploads.ts';
 import { handleVoicePost, listVoice } from './voice.ts';
+import { handleCreateProject } from './projects.ts';
 
 const log = logger('server');
 let clientSeq = 0;
@@ -165,6 +166,7 @@ export function startServer(hub: Hub) {
       const u = req.url ?? '/';
       if (u.startsWith('/api/upload') && req.method === 'POST') return handleUpload(req, res);
       if ((u.startsWith('/api/transcribe') || u.startsWith('/api/voice/')) && req.method === 'POST') return void handleVoicePost(req, res);
+      if (u.startsWith('/api/projects/create') && req.method === 'POST') return void handleCreateProject(req, res);
       if (u.startsWith('/api/')) return void api(hub, req, res);
       if (local) return proxyHttp(req, res);
       res.writeHead(404).end();

@@ -41,6 +41,18 @@ export function resetIn(unixSec?: number): string {
   return `через ${m} мин`;
 }
 
+/** Wall-clock moment of a reset: «сегодня в 15:40», «завтра в 09:00», «пн, 18 нояб., 15:40». */
+export function resetAt(unixSec?: number): string {
+  if (!unixSec) return '';
+  const d = new Date(unixSec * 1000);
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(d) - day(new Date())) / 86_400_000);
+  if (diff === 0) return `сегодня в ${time}`;
+  if (diff === 1) return `завтра в ${time}`;
+  return `${d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' })}, ${time}`;
+}
+
 export function duration(ms?: number | null): string {
   if (ms == null) return '';
   if (ms < 1000) return `${ms} мс`;

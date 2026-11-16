@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, GitBranchIcon } from 'lucide-react';
+import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, GitBranchIcon } from 'lucide-react';
+import { NewProjectDialog } from '@/components/new-project-dialog';
 import type { AgentCapabilities, AgentKind, ChatMode, ChatSettings, ProjectInfo, SendPayload } from '@mcc-agents/protocol';
 import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,7 @@ function expand(p: string) {
   return t.replace(/\/+$/, '');
 }
 
-function ProjectPicker({ value, onChange, projects }: { value: string; onChange: (p: string) => void; projects: ProjectInfo[] }) {
+function ProjectPicker({ value, onChange, projects, onNew }: { value: string; onChange: (p: string) => void; projects: ProjectInfo[]; onNew: () => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const custom = q.startsWith('/') || q.startsWith('~') ? expand(q) : '';
@@ -52,6 +53,18 @@ function ProjectPicker({ value, onChange, projects }: { value: string; onChange:
           <CommandInput value={q} onValueChange={setQ} placeholder="Поиск или путь: ~/dev/…" className="h-11" />
           <CommandList className="max-h-[50vh]">
             <CommandEmpty>Ничего не найдено</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="new-project"
+                onSelect={() => {
+                  setOpen(false);
+                  onNew();
+                }}
+                className="py-2.5"
+              >
+                <FolderPlusIcon /> Новый проект…
+              </CommandItem>
+            </CommandGroup>
             {custom && (
               <CommandGroup heading="Папка">
                 <CommandItem
@@ -226,6 +239,7 @@ function NewConversation({ initialAgent }: { initialAgent?: AgentKind }) {
 
 function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; initialAgent?: AgentKind }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [newProject, setNewProject] = useState(false);
   const [cwd, setCwd] = useState(initialCwd ?? '');
   const [agent, setAgent] = useState<AgentKind>(initialAgent ?? ((typeof window !== 'undefined' && (localStorage.getItem('lastAgent') as AgentKind)) || 'claude'));
   const [settings, setSettings] = useState<ChatSettings>({});
@@ -301,7 +315,15 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
           </div>
           <div className="space-y-2">
             <AgentCards agent={agent} onChange={setAgent} />
-            <ProjectPicker value={cwd} onChange={setCwd} projects={projects} />
+            <ProjectPicker value={cwd} onChange={setCwd} projects={projects} onNew={() => setNewProject(true)} />
+            <NewProjectDialog
+              open={newProject}
+              onOpenChange={setNewProject}
+              onCreated={(p) => {
+                setProjects((cur) => [{ path: p, name: p.split('/').pop() ?? p, lastActivity: Date.now(), chatCount: 0, isGit: true }, ...cur]);
+                setCwd(p);
+              }}
+            />
             {caps && !caps.available && <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{AGENT_NAME[agent]} недоступен: {caps.error}</div>}
           </div>
         </div>

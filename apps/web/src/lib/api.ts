@@ -67,3 +67,12 @@ export async function deleteVoice(id: string | 'all'): Promise<number> {
   if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
   return body.deleted ?? 0;
 }
+
+/** New project folder in ~/dev (optionally `git init`). */
+export async function createProject(name: string, git: boolean): Promise<{ path: string; gitError?: string }> {
+  const r = await fetch('/api/projects/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, git }) });
+  if (r.status === 401) toLogin();
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
+  return body;
+}

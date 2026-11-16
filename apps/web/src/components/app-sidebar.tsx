@@ -1,10 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronRightIcon, CodeXmlIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ChevronRightIcon, CodeXmlIcon, FolderPlusIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
+import { NewProjectDialog } from '@/components/new-project-dialog';
 import { ResizeHandle } from '@/components/resize-handle';
 import { SettingsDialog } from '@/components/settings-dialog';
 import { Button } from '@/components/ui/button';
@@ -97,6 +98,7 @@ export function AppSidebar() {
   const chats = useStore((s) => s.chats);
   const route = useStore((s) => s.route);
   const mode = useStore(modeOf);
+  const [newProject, setNewProject] = useState(false);
   const limits = useStore((s) => s.limits);
   const connected = useStore((s) => s.connected);
   const everConnected = useStore((s) => s.everConnected);
@@ -149,9 +151,16 @@ export function AppSidebar() {
           {!connected && everConnected && <WifiOffIcon className="size-4 text-destructive" aria-label="нет связи" />}
         </div>
         <ModeSwitch mode={mode} />
-        <Button className="h-10 justify-start gap-2 md:h-9" onClick={() => newChat()}>
-          <PlusIcon className="size-4" /> {mode === 'chat' ? 'Новая беседа' : 'Новый чат'}
-        </Button>
+        <div className="flex gap-1.5">
+          <Button className="h-10 flex-1 justify-start gap-2 md:h-9" onClick={() => newChat()}>
+            <PlusIcon className="size-4" /> {mode === 'chat' ? 'Новая беседа' : 'Новый чат'}
+          </Button>
+          {mode === 'code' && (
+            <Button variant="outline" size="icon" className="size-10 shrink-0 md:size-9" onClick={() => setNewProject(true)} aria-label="Новый проект" title="Новый проект в ~/dev">
+              <FolderPlusIcon className="size-4" />
+            </Button>
+          )}
+        </div>
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -252,6 +261,14 @@ export function AppSidebar() {
       </SidebarFooter>
       <ResizeHandle side="right" cssVar="--sidebar-w" cookie="mcc_sidebar_w" min={220} max={() => 480} />
       <SettingsDialog open={settings} onOpenChange={setSettings} />
+      <NewProjectDialog
+        open={newProject}
+        onOpenChange={setNewProject}
+        onCreated={(cwd) => {
+          store.navigate({ kind: 'new', cwd, mode: 'code' });
+          if (isMobile) setOpenMobile(false);
+        }}
+      />
     </Sidebar>
   );
 }
