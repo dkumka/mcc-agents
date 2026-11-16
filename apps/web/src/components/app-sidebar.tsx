@@ -36,7 +36,20 @@ import { cn } from '@/lib/utils';
  * A chat in the list. Its menu (pin, rename, archive): «⋯» on hover and right click with a mouse, long press on a phone.
  * Archived rows show «Вернуть» instead of «⋯».
  */
-function ChatRow({ c, active, onPick, onRename }: { c: ChatSummary; active: boolean; onPick: () => void; onRename: (c: ChatSummary) => void }) {
+function ChatRow({
+  c,
+  active,
+  onPick,
+  onRename,
+  mark,
+}: {
+  c: ChatSummary;
+  active: boolean;
+  onPick: () => void;
+  onRename: (c: ChatSummary) => void;
+  /** show the archive icon (search results mix archived chats with the rest) */
+  mark?: boolean;
+}) {
   const [menu, setMenu] = useState(false);
   const press = useRef<number | undefined>(undefined);
   const long = useRef(false);
@@ -76,7 +89,7 @@ function ChatRow({ c, active, onPick, onRename }: { c: ChatSummary; active: bool
         <AgentMark agent={c.agent} className="opacity-90" />
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold', c.archived && 'text-muted-foreground')}>{c.title}</span>
         {c.forkOf && <GitBranchIcon className="size-3 shrink-0 text-muted-foreground" aria-label="ветка" />}
-        {c.archived && <ArchiveIcon className="size-3 shrink-0 text-muted-foreground" aria-label="в архиве" />}
+        {c.archived && mark && <ArchiveIcon className="size-3 shrink-0 text-muted-foreground" aria-label="в архиве" />}
         <StatusDot status={c.status} unread={c.unread} />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>
       </SidebarMenuButton>
@@ -269,7 +282,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {pinned.map((c) => (
-                  <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} onRename={setRenaming} />
+                  <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} onRename={setRenaming} mark />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -281,7 +294,7 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {list.map((c) => (
-                  <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} onRename={setRenaming} />
+                  <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} onRename={setRenaming} mark />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -304,7 +317,7 @@ export function AppSidebar() {
                 <SidebarGroupContent>
                   <SidebarMenu>
                     {list.slice(0, limit).map((c) => (
-                      <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} onRename={setRenaming} />
+                      <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} onRename={setRenaming} mark />
                     ))}
                     {list.length > limit && (
                       <SidebarMenuItem>
