@@ -1,25 +1,19 @@
-# mcc agents — демон: держит процессы `claude -p` (по одному на активный чат) и один `codex app-server`,
-# отдаёт API и WebSocket веб-интерфейсу. https://agents.mcc.example.com (nginx → unix-сокет).
-# Сокеты: /run/mcc-agents/agentd.sock (660, группа codeweb — только www-data/nginx),
-#         /run/mcc-agents/local.sock  (600, только dev — для ssh -L туннеля при тестах, без пароля nginx).
-# UMask не задаём: он наследуется агентами и поменял бы права файлов в проектах.
-# ВНИМАНИЕ: перезапуск убивает идущие задачи агентов (KillMode=control-group) — см. scripts/deploy.sh.
 [Unit]
-Description=mcc agents daemon (claude / codex CLI -> web UI)
+Description=MCC agents service
 After=network.target
 
 [Service]
-Type=simple
-User=dev
-Group=dev
-WorkingDirectory=/home/dev/dev/mcc-agents
-Environment=HOME=/home/dev LANG=C.UTF-8 XDG_RUNTIME_DIR=/run/user/1000 NODE_ENV=production
-Environment=PATH=/home/dev/.npm-global/bin:/home/dev/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+User=klemid
+Group=klemid
+WorkingDirectory=/home/klemid/.local/share/mcc-klemid/agents
+Environment=HOME=/home/klemid NODE_ENV=production
+Environment=PATH=/home/klemid/.local/share/node/node-v24.22.3-linux-x64/bin:/home/klemid/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=AGENTD_PROJECT_ROOTS=/home/klemid/dev:/home/klemid/dev/supa AGENTD_NOTIFY=0
 Environment=AGENTD_SOCKET=/run/mcc-agents/agentd.sock AGENTD_LOCAL_SOCKET=/run/mcc-agents/local.sock
-ExecStart=/usr/bin/node apps/agentd/src/index.ts
+ExecStart=/home/klemid/.local/share/node/node-v24.22.3-linux-x64/bin/node apps/agentd/src/index.ts
 Restart=on-failure
-RestartSec=3
-TimeoutStopSec=15
+NoNewPrivileges=yes
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

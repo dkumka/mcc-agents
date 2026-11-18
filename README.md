@@ -17,7 +17,7 @@
 apps/agentd      демон (Node 24, TypeScript без сборки — node запускает .ts напрямую): процессы CLI, API, WebSocket
 apps/web         веб-интерфейс (Next.js 16 + shadcn/ui, radix-vega / neutral)
 packages/protocol общие типы agentd ⇄ web
-deploy/          systemd-юниты, tmpfiles, сайт nginx (копии того, что лежит на сервере)
+deploy/          systemd-юниты и tmpfiles (копии того, что лежит на сервере); nginx для agents.mcc.klemid.ru — общий `mcc-nginx.conf` в репозитории `mcc-server`
 scripts/         sync.sh (Mac → сервер), deploy.sh (обновление на сервере), e2e.mjs (дымовой тест)
 docs/            ARCHITECTURE.md — как устроено, STATUS.md — что готово и что дальше, spike-0.md — проверка протоколов
 ```
