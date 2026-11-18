@@ -18,7 +18,7 @@
   ты дочерний процесс `mcc-agentd`, и его рестарт убьёт тебя: делай отложенно (`sudo systemd-run --on-active=30s systemctl restart mcc-agentd`) и предупреди пользователя.
 - nginx — только `sudo nginx -t && sudo systemctl reload nginx`.
 - Изменения на сервере (юниты, nginx, tmpfiles) — копии в `deploy/` этого репозитория **и** запись в журнал
-  `~/dev/mcc/SERVER.md` + копии в `~/dev/mcc/server/` (правила репозитория `mcc-server`).
+  `~/dev/mcc/mcc-server/SERVER.md` + копии в `~/dev/mcc/mcc-server/server/` (правила репозитория `mcc-server`).
 - Секреты в репозиторий не писать.
 - Коммиты и push в этот репозиторий агенты делают сами, сообщения — коротко по-русски или conventional.
 

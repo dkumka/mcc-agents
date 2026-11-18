@@ -219,7 +219,7 @@ iOS Simulator не проверен. Код панели и службы не м
 в Markdown и файловых действиях. Просмотр использует вкладку «Файлы» панели.
 code-server 4.145.2 установлен локально. Подготовлены служба, nginx, сертификат
 DNS-01, возврат после общего входа и карточка главной. Публикация через
-`sudo bash /home/klemid/dev/mcc/deploy/vscode/install.sh` из SSH, поскольку
+`sudo bash /home/klemid/dev/mcc/mcc-server/deploy/vscode/install.sh` из SSH, поскольку
 среда агента имеет NoNewPrivileges. Работающий демон не менялся.
 Проверки сборки, браузера и ограничения см. `../../deploy/vscode/README.md`.
 
@@ -294,7 +294,7 @@ Markdown-блоки с сохранением примеров кода. Таб�
 Chromium 375/402/1440 для меню, переименования, pin, статуса, общего и проектного
 архива, подтверждения, writing и таблиц; предпросмотр/удаление изображения на
 375/1440. iOS Simulator из VPS недоступен. Публикация требует SSH после завершения
-задач: sudo bash /home/klemid/dev/mcc/agents/scripts/deploy-chat-management.sh.
+задач: sudo bash /home/klemid/dev/mcc/mcc-agents/scripts/deploy-chat-management.sh.
 Скрипт собирает веб отдельно, сохраняет runtime/протокол/state.json и старую сборку,
 проверяет busy=0, обновляет hub/store/протокол runtime и перезапускает agentd/web.
 Текущие службы из сессии агента не менялись.
@@ -317,7 +317,7 @@ Chromium 375/402/1440 для меню, переименования, pin, ста
 В подтверждении действия между текстом и вводом задан flex gap 12 px, включая длинные
 многострочные названия. Подготовлен web-only установщик scripts/deploy-web.sh:
 отдельная чистая сборка, резервная копия .next, перезапуск web, ожидание HTTP 200 и откат.
-Для применения через SSH: sudo bash /home/klemid/dev/mcc/agents/scripts/deploy-web.sh.
+Для применения через SSH: sudo bash /home/klemid/dev/mcc/mcc-agents/scripts/deploy-web.sh.
 
 Проверки полировки: production build/TypeScript прошли, Chromium 375/402/1440
 подтвердил зазор 4 px, pointer, зелёную точку 6 px, выключенный пункт без статуса,

@@ -28,9 +28,9 @@ docs/            ARCHITECTURE.md — как устроено, STATUS.md — чт
 На Mac `claude`/`codex` и Node для этого проекта не запускаем.
 
 ```bash
-scripts/sync.sh                     # Mac → ~/dev/mcc-agents на сервере (rsync, без коммита)
+scripts/sync.sh                     # Mac → ~/dev/mcc/mcc-agents на сервере (rsync, без коммита)
 scripts/sync.sh --pull              # обратно: файлы, созданные на сервере (package-lock, компоненты shadcn)
-ssh dev@SERVER_IP '~/dev/mcc-agents/scripts/deploy.sh --local'   # собрать и перезапустить то, что залито
+ssh dev@SERVER_IP '~/dev/mcc/mcc-agents/scripts/deploy.sh --local'   # собрать и перезапустить то, что залито
 ```
 
 Боевое обновление — через GitHub: коммит → `git push` → на сервере `scripts/deploy.sh` (подтянет `origin/main`,

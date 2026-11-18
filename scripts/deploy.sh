@@ -21,7 +21,7 @@ for a in "$@"; do
 done
 
 if [[ $(hostname) != mcc ]]; then
-  echo "Запускать на сервере: ssh dev@SERVER_IP '~/dev/mcc-agents/scripts/deploy.sh'" >&2
+  echo "Запускать на сервере: ssh dev@SERVER_IP '~/dev/mcc/mcc-agents/scripts/deploy.sh'" >&2
   exit 1
 fi
 
@@ -36,7 +36,7 @@ if [[ $LOCAL == 0 ]]; then
   if GIT_INDEX_FILE=$tmpidx git diff-files --quiet; then
     git reset -q --hard origin/main
   else
-    echo "В ~/dev/mcc-agents есть изменения, которых нет в origin/main. Закоммитьте их или запустите с --local." >&2
+    echo "В ~/dev/mcc/mcc-agents есть изменения, которых нет в origin/main. Закоммитьте их или запустите с --local." >&2
     GIT_INDEX_FILE=$tmpidx git diff-files --name-only | head -20 >&2
     exit 1
   fi

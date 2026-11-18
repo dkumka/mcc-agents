@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac → server: push the working tree into ~/dev/mcc-agents on the server (dev loop, no commit needed).
+# Mac → server: push the working tree into ~/dev/mcc/mcc-agents on the server (dev loop, no commit needed).
 # Usage: scripts/sync.sh            — push sources
 #        scripts/sync.sh --pull     — pull files generated on the server (lockfile, shadcn components)
 set -euo pipefail

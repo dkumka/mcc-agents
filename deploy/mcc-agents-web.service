@@ -5,10 +5,10 @@ After=network.target mcc-agentd.service
 [Service]
 User=klemid
 Group=klemid
-WorkingDirectory=/home/klemid/dev/mcc/agents/apps/web
+WorkingDirectory=/home/klemid/dev/mcc/mcc-agents/apps/web
 Environment=HOME=/home/klemid NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 Environment=PATH=/home/klemid/.local/share/node/node-v24.22.3-linux-x64/bin:/home/klemid/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/klemid/dev/mcc/agents/node_modules/.bin/next start -H 127.0.0.1 -p 3110
+ExecStart=/home/klemid/dev/mcc/mcc-agents/node_modules/.bin/next start -H 127.0.0.1 -p 3110
 Restart=on-failure
 NoNewPrivileges=yes
 
