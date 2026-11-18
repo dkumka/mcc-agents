@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { api, uploadFile } from '@/lib/api';
 import { dictationSupported, MAX_DICTATION_SEC, retryVoice, useDictation, type VoiceRef } from '@/lib/dictation';
+import { matchModel } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -112,7 +113,7 @@ export function SettingsChips({
   compact?: boolean;
 }) {
   const models = caps?.models ?? [];
-  const model = models.find((m) => m.id === settings.model) ?? models.find((m) => settings.model && settings.model.includes(m.id)) ?? models.find((m) => m.isDefault);
+  const model = matchModel(models, settings.model) ?? models.find((m) => m.isDefault);
   const efforts = model?.efforts ?? [];
   const modes = caps?.permissionModes ?? [];
   const mode = modes.find((m) => m.id === (settings.permissionMode ?? caps?.defaults.permissionMode));

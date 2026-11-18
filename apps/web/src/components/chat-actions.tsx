@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { setArchived } from '@/lib/archive';
 import { store } from '@/lib/store';
+import { ui } from '@/lib/ui';
 
 export function RenameDialog({ open, onOpenChange, chatId, title }: { open: boolean; onOpenChange: (v: boolean) => void; chatId: string; title: string }) {
   const [v, setV] = useState(title);
@@ -80,12 +82,13 @@ export function ChatActions({ chat }: { chat: ChatSummary }) {
       <DropdownMenuContent align="end" className="min-w-48 [&_[role=menuitem]]:min-h-10">
         <DropdownMenuItem onClick={() => setRename(true)}>Переименовать</DropdownMenuItem>
         <DropdownMenuItem onClick={() => store.meta(chat.id, { pinned: !chat.pinned })}>{chat.pinned ? 'Открепить' : 'Закрепить'}</DropdownMenuItem>
+        <DropdownMenuItem disabled={chat.status === 'running' || chat.status === 'starting' || chat.status === 'waiting'} onClick={() => ui.set({ fork: { chatId: chat.id } })}>Форк чата…</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => store.meta(chat.id, { taskStage: 'in-progress' })}>В работе {chat.taskStage === 'in-progress' ? '✓' : ''}</DropdownMenuItem>
         <DropdownMenuItem onClick={() => store.meta(chat.id, { taskStage: 'done' })}>Готово {chat.taskStage === 'done' ? '✓' : ''}</DropdownMenuItem>
         <DropdownMenuItem disabled={!chat.taskStage} onClick={() => store.meta(chat.id, { taskStage: null })}>Убрать статус</DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => store.meta(chat.id, { archived: !chat.archived })}>{chat.archived ? 'Вернуть из архива' : 'Архивировать'}</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setArchived(chat.id, !chat.archived)}>{chat.archived ? 'Вернуть из архива' : 'Архивировать'}</DropdownMenuItem>
         <DropdownMenuItem variant="destructive" onClick={() => setRemove(true)}>Удалить чат</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

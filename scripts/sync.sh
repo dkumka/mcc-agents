@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Mac → server: push the working tree into ~/dev/mcc/mcc-agents on the server (dev loop, no commit needed).
+# Afterwards the server's git is moved to origin/main when the files match it (committed + pushed) — scripts/git-align.sh.
 # Usage: scripts/sync.sh            — push sources
 #        scripts/sync.sh --pull     — pull files generated on the server (lockfile, shadcn components)
 set -euo pipefail
@@ -13,4 +14,6 @@ if [[ "${1:-}" == "--pull" ]]; then
 else
   # --delete: files removed on the Mac disappear on the server too (excluded paths are kept)
   rsync -az --delete "${EXCLUDES[@]}" "$ROOT/" "$HOST:$REMOTE/"
+  # files came, git did not: move the server's git to origin/main if the files are exactly that (see git-align.sh)
+  ssh "$HOST" "bash $REMOTE/scripts/git-align.sh"
 fi

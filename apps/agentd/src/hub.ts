@@ -22,7 +22,7 @@ import { CHAT_ROOT, isChatDir, newChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
 import { store, type ChatMeta } from './store.ts';
-import { TelegramBridge } from './telegram.ts';
+import { TelegramBridge, escapeHtml } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
 import { textWithFiles } from './uploads.ts';
 import { cleanupModel, openrouterKey, voiceModel } from './voice.ts';
@@ -35,6 +35,8 @@ export interface Adapter {
   list(): Promise<ChatSummary[]>;
   load(chat: Chat): Promise<void>;
   prepare(cwd: string, settings: ChatSettings): Promise<string>;
+  /** Copy the dialogue into a new session (up to, not including, the user message `beforeItemId`); returns its native id. */
+  fork(chat: Chat, title: string, beforeItemId?: string): Promise<string>;
   send(chat: Chat, message: SendPayload, uuid: string, isNew: boolean): Promise<void>;
   interrupt(chat: Chat): Promise<void>;
   decide(chat: Chat, d: ApprovalDecision): Promise<void>;
@@ -115,6 +117,11 @@ export class Hub implements ChatSink {
     out.projectDeleted = !!project.deleted;
     out.mode = isChatDir(out.cwd) ? 'chat' : 'code';
     if (meta.web && out.origin !== 'web') out.origin = 'web';
+    if (meta.forkOf) out.forkOf = meta.forkOf;
+    if (meta.rewoundFrom) out.rewoundFrom = meta.rewoundFrom;
+    if (meta.hidden) out.hidden = true;
+    if (meta.archived) out.archived = true;
+    if (meta.notifyDone) out.notifyDone = true;
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
   }
@@ -231,12 +238,18 @@ export class Hub implements ChatSink {
     return false;
   }
 
+  /**
+   * No «Готово» in Telegram by default — only questions/approvals that wait for an answer (tg-approvals).
+   * «Сообщить, когда закончит» (meta.notifyDone) asks for one message about the end of the turn; it switches off then.
+   */
   turnFinished(chat: Chat, outcome: 'done' | 'error' | 'interrupted') {
+    const asked = !!store.meta(chat.id).notifyDone;
     if (this.visibleTo(chat)) {
       store.setMeta(chat.id, { lastSeen: Date.now() + 5000 });
-    } else if (outcome !== 'interrupted') {
-      this.notify(chat, outcome === 'done' ? '✅ Готово' : '⚠️ Ошибка');
+    } else if (asked && outcome !== 'interrupted') {
+      this.notify(chat, outcome === 'done' ? '✅ Готово' : '⚠️ Ошибка', true);
     }
+    if (asked && outcome !== 'interrupted') store.setMeta(chat.id, { notifyDone: undefined });
     this.summaryChanged(chat);
   }
 
@@ -250,11 +263,20 @@ export class Hub implements ChatSink {
     this.tga.removed(chat, approvalId);
   }
 
-  private notify(chat: Chat, what: string) {
-    if (!config.notify) return;
+  private notify(chat: Chat, what: string, force = false) {
+    if (!config.notify) {
+      // no external `notify` here (AGENTD_NOTIFY=0): an asked-for «Готово» goes through our own Telegram bot
+      if (force && this.tg.ready) {
+        log.info(`notify ${chat.id} via telegram: ${what}`);
+        const url = `${config.publicUrl}/?chat=${encodeURIComponent(chat.id)}`;
+        void this.tg.send(`${escapeHtml(what)}\n${AGENT_LABEL[chat.agent]} · ${escapeHtml(chat.summary.title.slice(0, 100))}`, [[{ text: 'Открыть чат', url }]]);
+      }
+      return;
+    }
     const last = this.lastNotify.get(chat.id) ?? 0;
-    if (Date.now() - last < 20_000) return;
+    if (!force && Date.now() - last < 20_000) return;
     this.lastNotify.set(chat.id, Date.now());
+    log.info(`notify ${chat.id}: ${what}`);
     const text = `${what}\n${AGENT_LABEL[chat.agent]} · ${chat.summary.title.slice(0, 100)}\n${config.publicUrl}/?chat=${encodeURIComponent(chat.id)}`;
     try {
       const p = spawn(config.notifyBin, [text], { stdio: 'ignore' });
@@ -382,8 +404,52 @@ export class Hub implements ChatSink {
         }
         return;
       }
+      case 'fork': {
+        const src = this.need(msg.chatId);
+        if (src.summary.status === 'running' || src.summary.status === 'starting' || src.summary.status === 'waiting')
+          throw new Error('Агент ещё работает — дождитесь конца ответа или остановите его');
+        const title = msg.title.trim().slice(0, 140) || src.summary.title;
+        const nativeId = await this.adapters[src.agent].fork(src, title, msg.beforeItemId);
+        const id = `${src.agent}:${nativeId}`;
+        await this.refresh();
+        if (!this.chats.has(id)) {
+          // not listed yet (Codex may index a moment later): show it right away
+          const now = Date.now();
+          this.chats.set(id, new Chat({ ...src.summary, id, nativeId, title, createdAt: now, updatedAt: now, status: 'idle', origin: 'web' }, this));
+        }
+        const srcMeta = store.meta(src.id);
+        store.setMeta(id, {
+          web: true,
+          title,
+          settings: srcMeta.settings ?? src.state.settings,
+          lastSeen: Date.now(),
+          ...(msg.rewind ? { rewoundFrom: src.id } : { forkOf: src.id }),
+        });
+        if (msg.rewind) store.setMeta(src.id, { hidden: true });
+        log.info(`${msg.rewind ? 'rewind' : 'fork'} ${src.id} → ${id}${msg.beforeItemId ? ` before ${msg.beforeItemId}` : ''}`);
+        this.summaryChanged(this.chats.get(id)!);
+        this.summaryChanged(src);
+        client.send({ t: 'created', reqId: msg.reqId, chatId: id });
+        return;
+      }
+      case 'unrewind': {
+        const chat = this.need(msg.chatId);
+        const orig = store.meta(chat.id).rewoundFrom;
+        if (!orig || !this.chats.has(orig)) throw new Error('исходный чат не найден');
+        store.setMeta(orig, { hidden: false });
+        store.setMeta(chat.id, { hidden: true });
+        log.info(`unrewind ${chat.id} → ${orig}`);
+        this.summaryChanged(this.chats.get(orig)!);
+        this.summaryChanged(chat);
+        return;
+      }
       case 'send': {
         const chat = this.need(msg.chatId);
+        // writing to an archived chat brings it back to the list
+        if (store.meta(chat.id).archived) {
+          store.setMeta(chat.id, { archived: undefined });
+          this.summaryChanged(chat);
+        }
         await this.ensureLoaded(chat);
         const uuid = randomUUID();
         chat.upsert(this.userItem(uuid, msg.message));
@@ -444,13 +510,18 @@ export class Hub implements ChatSink {
       case 'meta': {
         const chat = this.need(msg.chatId);
         const patch: Partial<ChatMeta> = {};
-        if (msg.archived !== undefined) patch.archived = !!msg.archived;
         if (msg.taskStage !== undefined) {
           if (msg.taskStage !== null && msg.taskStage !== 'done' && msg.taskStage !== 'in-progress') throw new Error('Неизвестный статус задачи');
           patch.taskStage = msg.taskStage;
         }
         if (msg.pinned !== undefined) patch.pinned = msg.pinned;
         if (msg.title !== undefined) patch.title = msg.title.trim() || undefined;
+        if (msg.notifyDone !== undefined) patch.notifyDone = msg.notifyDone || undefined;
+        if (msg.archived !== undefined) {
+          patch.archived = msg.archived || undefined;
+          // an archived chat is out of the way: not pinned either
+          if (msg.archived) patch.pinned = false;
+        }
         store.setMeta(chat.id, patch);
         this.summaryChanged(chat);
         return;

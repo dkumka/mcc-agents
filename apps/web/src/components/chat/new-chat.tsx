@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, GitBranchIcon } from 'lucide-react';
+import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, GitBranchIcon } from 'lucide-react';
+import { NewProjectDialog } from '@/components/new-project-dialog';
 import type { AgentCapabilities, AgentKind, ChatMode, ChatSettings, ProjectInfo, SendPayload } from '@mcc-agents/protocol';
 import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,7 @@ function expand(p: string) {
   return t.replace(/\/+$/, '');
 }
 
-function ProjectPicker({ value, onChange, projects }: { value: string; onChange: (p: string) => void; projects: ProjectInfo[] }) {
+function ProjectPicker({ value, onChange, projects, onNew }: { value: string; onChange: (p: string) => void; projects: ProjectInfo[]; onNew: () => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const custom = q.startsWith('/') || q.startsWith('~') ? expand(q) : '';
@@ -52,6 +53,18 @@ function ProjectPicker({ value, onChange, projects }: { value: string; onChange:
           <CommandInput value={q} onValueChange={setQ} placeholder="Поиск или путь: ~/dev/…" className="h-11" />
           <CommandList className="max-h-[50vh]">
             <CommandEmpty>Ничего не найдено</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="new-project"
+                onSelect={() => {
+                  setOpen(false);
+                  onNew();
+                }}
+                className="py-2.5"
+              >
+                <FolderPlusIcon /> Новый проект…
+              </CommandItem>
+            </CommandGroup>
             {custom && (
               <CommandGroup heading="Папка">
                 <CommandItem
@@ -100,6 +113,12 @@ function lastSettings(agent: AgentKind): ChatSettings {
   } catch {
     return {};
   }
+}
+
+/** The «decide yourself, ask only about risky things» mode: Claude `auto`, Codex `on-request`. */
+function autoMode(caps: AgentCapabilities): string | undefined {
+  const has = (m: string) => caps.permissionModes.some((x) => x.id === m);
+  return has('auto') ? 'auto' : has('on-request') ? 'on-request' : caps.defaults.permissionMode;
 }
 
 /** Conversations start the same way every time: Claude Opus (or Codex if picked), automatic permissions. */
@@ -226,6 +245,7 @@ function NewConversation({ initialAgent, draft }: { initialAgent?: AgentKind; dr
 
 function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: string; initialAgent?: AgentKind; draft?: string }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [newProject, setNewProject] = useState(false);
   const [cwd, setCwd] = useState(initialCwd ?? '');
   const [agent, setAgent] = useState<AgentKind>(initialAgent ?? ((typeof window !== 'undefined' && (localStorage.getItem('lastAgent') as AgentKind)) || 'claude'));
   const [settings, setSettings] = useState<ChatSettings>({});
@@ -249,7 +269,8 @@ function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: stri
     if (initialAgent) setAgent(initialAgent);
   }, [initialAgent]);
 
-  // defaults from the CLI, overridden by what was used last time
+  // model and effort: what was used last time; permissions: always «Авто» (Claude) / «Модель решает» (Codex) —
+  // change it in the chip for this chat if needed
   useEffect(() => {
     if (!caps) return;
     const last = lastSettings(agent);
@@ -257,7 +278,7 @@ function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: stri
     setSettings({
       model: last.model && models.includes(last.model) ? last.model : caps.defaults.model,
       effort: last.effort ?? caps.defaults.effort,
-      permissionMode: last.permissionMode && caps.permissionModes.some((m) => m.id === last.permissionMode) ? last.permissionMode : caps.defaults.permissionMode,
+      permissionMode: autoMode(caps),
     });
   }, [caps, agent]);
 
@@ -301,7 +322,15 @@ function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: stri
           </div>
           <div className="space-y-2">
             <AgentCards agent={agent} onChange={setAgent} />
-            <ProjectPicker value={cwd} onChange={setCwd} projects={projects} />
+            <ProjectPicker value={cwd} onChange={setCwd} projects={projects} onNew={() => setNewProject(true)} />
+            <NewProjectDialog
+              open={newProject}
+              onOpenChange={setNewProject}
+              onCreated={(p) => {
+                setProjects((cur) => [{ path: p, name: p.split('/').pop() ?? p, lastActivity: Date.now(), chatCount: 0, isGit: true }, ...cur]);
+                setCwd(p);
+              }}
+            />
             {caps && !caps.available && <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{AGENT_NAME[agent]} недоступен: {caps.error}</div>}
           </div>
         </div>

@@ -7,7 +7,7 @@ import { FileBase, Markdown, TaskPrompt } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { store } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { NoticeLine, ThinkingBlock, ToolCard, UserBubble, isVisible } from './items';
+import { MessageActions, NoticeLine, ThinkingBlock, ToolCard, UserBubble, isVisible } from './items';
 
 function useTree(items: ChatItem[]) {
   return useMemo(() => {
@@ -177,6 +177,10 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
     setShowDown(dist > 80);
   };
 
+  const firstUserId = useMemo(() => state.items.find((i) => i.kind === 'user')?.id ?? null, [state.items]);
+  const anyBusy = busy || state.summary.status === 'waiting';
+  const actions = useMemo(() => ({ chatId, firstUserId, busy: anyBusy }), [chatId, firstUserId, anyBusy]);
+
   const last = top[top.length - 1];
   const streamingNow = last && ((last.kind === 'assistant' && last.streaming) || (last.kind === 'thinking' && last.streaming));
 
@@ -189,6 +193,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           store.navigate({ kind: 'new', agent: state.summary.agent, cwd: state.summary.cwd, mode: state.summary.mode ?? 'code', draft });
         }}>
         <FileBase.Provider value={state.summary.cwd}>
+        <MessageActions.Provider value={actions}>
         <div ref={content} className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-6 pt-4 md:px-6">
           {top.length === 0 && !busy && <div className="py-16 text-center text-sm text-muted-foreground">Сообщений пока нет</div>}
           {top.map((it) => (
@@ -199,6 +204,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           {busy && !streamingNow && <Working since={workingSince} label={state.summary.status === 'starting' ? 'Запускаю' : 'Работает'} />}
           {footer}
         </div>
+        </MessageActions.Provider>
         </FileBase.Provider>
         </TaskPrompt.Provider>
       </div>

@@ -24,7 +24,6 @@ export interface ChatSummary {
   /** Created from this web UI (otherwise: terminal, CloudCLI, …). */
   origin: 'web' | 'terminal' | 'other';
   pinned?: boolean;
-  archived?: boolean;
   deleted?: boolean;
   taskStage?: TaskStage;
   projectArchived?: boolean;
@@ -33,6 +32,16 @@ export interface ChatSummary {
   model?: string;
   /** 'chat' — a conversation outside projects (folder ~/chat/<date-id>), 'code' — work in a project. */
   mode?: ChatMode;
+  /** Branched off this chat (a fork). */
+  forkOf?: ChatId;
+  /** This chat is the original's dialogue rolled back to an earlier point; «Вернуть как было» shows `rewoundFrom` again. */
+  rewoundFrom?: ChatId;
+  /** Kept on disk but not listed (the original of a rollback, or a rollback that was undone). */
+  hidden?: boolean;
+  /** In the archive: out of the main list, nothing deleted. A new message brings it back. */
+  archived?: boolean;
+  /** «Сообщить в Telegram, когда закончит» is on: one message when the current/next turn ends, then it switches off. */
+  notifyDone?: boolean;
 }
 
 export type ChatMode = 'chat' | 'code';
@@ -376,12 +385,20 @@ export type ClientMessage =
       settings: ChatSettings;
       message: SendPayload;
     }
+  /**
+   * Branch the dialogue (files are not touched). `beforeItemId` — a user message: the branch keeps everything before it
+   * (absent: the whole chat). `rewind` — the branch replaces the chat: the original is hidden and can be brought back.
+   * Answered with `created` (reqId).
+   */
+  | { t: 'fork'; reqId: string; chatId: ChatId; title: string; beforeItemId?: string; rewind?: boolean }
+  /** Undo a rollback: show the original again, hide this branch. */
+  | { t: 'unrewind'; chatId: ChatId }
   | { t: 'send'; chatId: ChatId; message: SendPayload }
   | { t: 'interrupt'; chatId: ChatId }
   | { t: 'decide'; chatId: ChatId; decision: ApprovalDecision }
   | { t: 'settings'; chatId: ChatId; settings: ChatSettings }
   | { t: 'stopTask'; chatId: ChatId; taskId: string }
-  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string; archived?: boolean; taskStage?: TaskStage | null }
+  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string; archived?: boolean; taskStage?: TaskStage | null; notifyDone?: boolean }
   | { t: 'removeChat'; chatId: ChatId; confirm: string }
   | { t: 'projectMeta'; cwd: string; action: 'archive' | 'restore' | 'delete'; confirm: string }
   | { t: 'seen'; chatId: ChatId }

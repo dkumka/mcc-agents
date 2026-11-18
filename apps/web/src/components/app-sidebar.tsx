@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArchiveIcon, CheckIcon, ChevronRightIcon, CodeXmlIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ArchiveIcon, CheckIcon, ChevronRightIcon, CodeXmlIcon, FolderPlusIcon, GitBranchIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
 import { ChatActions, ProjectActions } from '@/components/chat-actions';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
+import { NewProjectDialog } from '@/components/new-project-dialog';
 import { ResizeHandle } from '@/components/resize-handle';
 import { SettingsDialog } from '@/components/settings-dialog';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPic
       <SidebarMenuButton isActive={active} onClick={onPick} className="h-auto min-h-10 min-w-0 flex-1 gap-2 py-2" title={c.title}>
         <AgentMark agent={c.agent} className="opacity-90" />
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold')}>{c.title}</span>
+        {c.forkOf && <GitBranchIcon className="size-3 shrink-0 text-muted-foreground" aria-label="ветка" />}
         {c.taskStage && <span title={c.taskStage === 'done' ? 'Готово' : 'В работе'} aria-label={c.taskStage === 'done' ? 'Готово' : 'В работе'} className="inline-flex shrink-0 items-center text-emerald-600">{c.taskStage === 'done' ? <CheckIcon className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}</span>}
         <StatusDot status={c.status} unread={c.unread} />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>
@@ -108,11 +110,14 @@ export function AppSidebar() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [settings, setSettings] = useState(false);
+  const [newProject, setNewProject] = useState(false);
   const activeId = route.kind === 'chat' ? route.chatId : null;
 
   const { pinned, groups, dated } = useMemo(() => {
     const list = Object.values(chats)
       .filter((c) => (c.mode ?? 'code') === mode && !c.deleted && !c.projectDeleted)
+      // hidden: the original of a rolled-back chat (or an undone rollback) — kept, not listed; the open one stays visible
+      .filter((c) => !c.hidden || c.id === activeId)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     const ql = q.trim().toLowerCase();
     const searched = ql ? list.filter((c) => c.title.toLowerCase().includes(ql) || (mode === 'code' && c.cwd.toLowerCase().includes(ql))) : list;
@@ -130,7 +135,7 @@ export function AppSidebar() {
     }
     const groups = [...by.entries()].sort((a, b) => Number(!!a[1][0].projectArchived) - Number(!!b[1][0].projectArchived) || b[1][0].updatedAt - a[1][0].updatedAt);
     return { pinned, groups, dated: [...dated.entries()] };
-  }, [chats, q, mode, archive]);
+  }, [chats, q, mode, archive, activeId]);
 
   const pick = (id: string) => {
     store.navigate({ kind: 'chat', chatId: id });
@@ -153,9 +158,16 @@ export function AppSidebar() {
           {!connected && everConnected && <WifiOffIcon className="size-4 text-destructive" aria-label="нет связи" />}
         </div>
         <ModeSwitch mode={mode} />
-        <Button className="h-10 justify-start gap-2 md:h-9" onClick={() => newChat()}>
-          <PlusIcon className="size-4" /> {mode === 'chat' ? 'Новая беседа' : 'Новый чат'}
-        </Button>
+        <div className="flex gap-1.5">
+          <Button className="h-10 flex-1 justify-start gap-2 md:h-9" onClick={() => newChat()}>
+            <PlusIcon className="size-4" /> {mode === 'chat' ? 'Новая беседа' : 'Новый чат'}
+          </Button>
+          {mode === 'code' && (
+            <Button variant="outline" size="icon" className="size-10 shrink-0 md:size-9" onClick={() => setNewProject(true)} aria-label="Новый проект" title="Новый проект в ~/dev">
+              <FolderPlusIcon className="size-4" />
+            </Button>
+          )}
+        </div>
         <div className="relative">
           <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -263,6 +275,14 @@ export function AppSidebar() {
       </SidebarFooter>
       <ResizeHandle side="right" cssVar="--sidebar-w" cookie="mcc_sidebar_w" min={220} max={() => 480} />
       <SettingsDialog open={settings} onOpenChange={setSettings} />
+      <NewProjectDialog
+        open={newProject}
+        onOpenChange={setNewProject}
+        onCreated={(cwd) => {
+          store.navigate({ kind: 'new', cwd, mode: 'code' });
+          if (isMobile) setOpenMobile(false);
+        }}
+      />
     </Sidebar>
   );
 }
