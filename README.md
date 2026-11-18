@@ -18,7 +18,7 @@ apps/agentd      демон (Node 24, TypeScript без сборки — node з
 apps/web         веб-интерфейс (Next.js 16 + shadcn/ui, radix-vega / neutral)
 packages/protocol общие типы agentd ⇄ web
 deploy/          systemd-юниты, tmpfiles, сайт nginx (копии того, что лежит на сервере)
-scripts/         sync.sh (Mac → сервер), deploy.sh (обновление на сервере), e2e.mjs (дымовой тест)
+scripts/         sync.sh (Mac → сервер) + git-align.sh, deploy.sh (обновление на сервере), e2e.mjs (дымовой тест)
 docs/            ARCHITECTURE.md — как устроено, STATUS.md — что готово и что дальше, spike-0.md — проверка протоколов
 ```
 
@@ -28,7 +28,7 @@ docs/            ARCHITECTURE.md — как устроено, STATUS.md — чт
 На Mac `claude`/`codex` и Node для этого проекта не запускаем.
 
 ```bash
-scripts/sync.sh                     # Mac → ~/dev/mcc-agents на сервере (rsync, без коммита)
+scripts/sync.sh                     # Mac → ~/dev/mcc-agents на сервере (rsync); если там ровно origin/main — git тоже туда (git-align.sh)
 scripts/sync.sh --pull              # обратно: файлы, созданные на сервере (package-lock, компоненты shadcn)
 ssh serzhb@94.131.82.220 '~/dev/mcc-agents/scripts/deploy.sh --local'   # собрать и перезапустить то, что залито
 ```
