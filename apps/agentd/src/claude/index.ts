@@ -108,6 +108,16 @@ class ClaudeProc {
   private requests = new Map<string, Json>(); // approval id → can_use_tool request
   private stderrTail: string[] = [];
   pendingTurns = 0;
+  /**
+   * Messages written to stdin and not finished yet, by uuid. The CLI reports each one (`command_lifecycle`:
+   * queued → started → completed); a message sent mid-turn is usually folded into the running turn, so one `result`
+   * can finish several messages — counting results left the chat «working» forever (2026-11-18).
+   */
+  private pending = new Set<string>();
+  /** The CLI sends `command_lifecycle` (otherwise: one result per message, `pendingTurns`). */
+  private lifecycle = false;
+  private lastResult: 'done' | 'error' | 'interrupted' | null = null;
+  lastEventAt = Date.now();
   exited = false;
   private idleTimer: NodeJS.Timeout | null = null;
   private lastRetryNotice = 0;
@@ -138,6 +148,8 @@ class ClaudeProc {
       let ev: Json;
       try {
         ev = JSON.parse(line);
+        // the answer to our own control request (e.g. «interrupt») is not a sign of work
+        if (ev?.type !== 'control_response') this.lastEventAt = Date.now();
       } catch {
         log.debug('non-json stdout', line.slice(0, 200));
         return;
@@ -206,8 +218,32 @@ class ClaudeProc {
       message: { role: 'user', content: content.length === 1 && content[0].type === 'text' ? p.text : content },
     });
     this.pendingTurns++;
+    this.pending.add(uuid);
     this.chat.setStatus('running');
     this.bumpIdle();
+  }
+
+  /** Nothing in flight any more: the chat is free. */
+  private get idleNow(): boolean {
+    return this.lifecycle ? this.pending.size === 0 : this.pendingTurns === 0;
+  }
+
+  private finishTurn() {
+    const outcome = this.lastResult ?? 'done';
+    this.lastResult = null;
+    this.pendingTurns = 0;
+    this.chat.settleRunningTools('interrupted');
+    this.chat.setStatus('idle');
+    this.chat.finished(outcome);
+  }
+
+  /** After «Стоп»: the CLI went quiet but we still think it works (e.g. a lost result) — don't hang in «Работает». */
+  settleIfQuiet(since: number) {
+    if (this.exited || this.lastEventAt > since || this.chat.summary.status !== 'running') return;
+    log.warn(`settle ${this.chat.id}: no events after interrupt, ${this.pending.size} message(s) left`);
+    this.pending.clear();
+    this.lastResult = this.lastResult ?? 'interrupted';
+    this.finishTurn();
   }
 
   private bumpIdle() {
@@ -281,6 +317,15 @@ class ClaudeProc {
       case 'result':
         this.result(ev);
         return;
+      case 'command_lifecycle': {
+        this.lifecycle = true;
+        if (ev.state !== 'queued' && ev.state !== 'started') {
+          this.pending.delete(String(ev.command_uuid));
+          // the last message finished after the turn's result (the CLI reports it in this order)
+          if (this.lastResult && this.idleNow) this.finishTurn();
+        }
+        return;
+      }
       case 'rate_limit_event':
         this.adapter.rateLimit(ev.rate_limit_info);
         return;
@@ -388,11 +433,8 @@ class ClaudeProc {
       const text = typeof ev.result === 'string' && ev.result ? ev.result : (ev.errors ?? []).join('\n') || `Ошибка: ${ev.subtype}`;
       chat.notice('error', text.slice(0, 2000));
     }
-    if (this.pendingTurns === 0) {
-      chat.settleRunningTools('interrupted');
-      chat.setStatus('idle');
-      chat.finished(outcome);
-    }
+    this.lastResult = outcome;
+    if (this.idleNow) this.finishTurn();
     this.ctrl('get_context_usage', {}, 15_000)
       .then((r) => {
         if (r.maxTokens) chat.setUsage({ contextTokens: r.totalTokens ?? 0, contextWindow: r.maxTokens, percent: r.percentage ?? 0 });
@@ -554,10 +596,13 @@ export class ClaudeAdapter implements Adapter {
   async interrupt(chat: Chat) {
     const p = this.procs.get(chat.id);
     if (!p) return;
+    const since = Date.now();
     await p.ctrl('interrupt', {}, 10_000).catch((e) => {
       log.warn('interrupt failed, killing', e);
       p.child.kill('SIGINT');
     });
+    // a real turn answers the interrupt with a result within a moment; silence means it was not running at all
+    setTimeout(() => p.settleIfQuiet(since), 4000);
   }
 
   async decide(chat: Chat, d: ApprovalDecision) {
