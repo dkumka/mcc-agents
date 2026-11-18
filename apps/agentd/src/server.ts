@@ -31,6 +31,14 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
         return json(res, 200, { ok: true, version: config.version, ...hub.status() });
       case '/api/projects':
         return json(res, 200, hub.projects());
+      case '/api/recent': {
+        // last visible chats for the MCC home page (mcc-status reads it through local.sock)
+        const limit = Math.min(20, Math.max(1, Number(q.get('limit')) || 5));
+        const chats = hub.summaries().filter((c) => !c.hidden && !c.deleted && !c.projectDeleted && !c.archived && !c.projectArchived);
+        return json(res, 200, chats.slice(0, limit).map((c) => ({
+          id: c.id, agent: c.agent, title: c.title, cwd: c.cwd, mode: c.mode ?? 'code', status: c.status, updatedAt: c.updatedAt, unread: !!c.unread,
+        })));
+      }
       case '/api/caps': {
         const agent = q.get('agent') as AgentKind;
         const a = hub.adapters[agent];
