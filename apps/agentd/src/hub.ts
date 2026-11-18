@@ -115,6 +115,7 @@ export class Hub implements ChatSink {
     if (meta.rewoundFrom) out.rewoundFrom = meta.rewoundFrom;
     if (meta.hidden) out.hidden = true;
     if (meta.archived) out.archived = true;
+    if (meta.notifyDone) out.notifyDone = true;
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
   }
@@ -230,12 +231,18 @@ export class Hub implements ChatSink {
     return false;
   }
 
+  /**
+   * No «Готово» in Telegram by default — only questions/approvals that wait for an answer (tg-approvals).
+   * «Сообщить, когда закончит» (meta.notifyDone) asks for one message about the end of the turn; it switches off then.
+   */
   turnFinished(chat: Chat, outcome: 'done' | 'error' | 'interrupted') {
+    const asked = !!store.meta(chat.id).notifyDone;
     if (this.visibleTo(chat)) {
       store.setMeta(chat.id, { lastSeen: Date.now() + 5000 });
-    } else if (outcome !== 'interrupted') {
-      this.notify(chat, outcome === 'done' ? '✅ Готово' : '⚠️ Ошибка');
+    } else if (asked && outcome !== 'interrupted') {
+      this.notify(chat, outcome === 'done' ? '✅ Готово' : '⚠️ Ошибка', true);
     }
+    if (asked && outcome !== 'interrupted') store.setMeta(chat.id, { notifyDone: undefined });
     this.summaryChanged(chat);
   }
 
@@ -249,10 +256,10 @@ export class Hub implements ChatSink {
     this.tga.removed(chat, approvalId);
   }
 
-  private notify(chat: Chat, what: string) {
+  private notify(chat: Chat, what: string, force = false) {
     if (!config.notify) return;
     const last = this.lastNotify.get(chat.id) ?? 0;
-    if (Date.now() - last < 20_000) return;
+    if (!force && Date.now() - last < 20_000) return;
     this.lastNotify.set(chat.id, Date.now());
     const text = `${what}\n${AGENT_LABEL[chat.agent]} · ${chat.summary.title.slice(0, 100)}\n${config.publicUrl}/?chat=${encodeURIComponent(chat.id)}`;
     try {
@@ -485,9 +492,10 @@ export class Hub implements ChatSink {
       }
       case 'meta': {
         const chat = this.need(msg.chatId);
-        const patch: { pinned?: boolean; title?: string; archived?: boolean } = {};
+        const patch: { pinned?: boolean; title?: string; archived?: boolean; notifyDone?: boolean } = {};
         if (msg.pinned !== undefined) patch.pinned = msg.pinned;
         if (msg.title !== undefined) patch.title = msg.title.trim() || undefined;
+        if (msg.notifyDone !== undefined) patch.notifyDone = msg.notifyDone || undefined;
         if (msg.archived !== undefined) {
           patch.archived = msg.archived || undefined;
           // an archived chat is out of the way: not pinned either

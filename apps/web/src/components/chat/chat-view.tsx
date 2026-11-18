@@ -20,6 +20,8 @@ import {
   XIcon,
   ArchiveIcon,
   ArchiveRestoreIcon,
+  BellRingIcon,
+  BellIcon,
 } from 'lucide-react';
 import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/protocol';
 import { AgentMark } from '@/components/agent-badge';
@@ -153,6 +155,17 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             <AgentMark agent={s.agent} />
             <h1 className="min-w-0 truncate text-sm font-medium">{s.title}</h1>
             {(s.status === 'running' || s.status === 'starting') && <Loader2Icon className="size-3.5 shrink-0 animate-spin text-info" />}
+            {s.notifyDone && (
+              <button
+                type="button"
+                title="Пришлю в Telegram, когда закончит — нажмите, чтобы отменить"
+                aria-label="Отменить сообщение в Telegram"
+                className="shrink-0 text-info hover:text-foreground"
+                onClick={() => store.meta(s.id, { notifyDone: false })}
+              >
+                <BellRingIcon className="size-3.5" />
+              </button>
+            )}
           </div>
           <div className="truncate text-[11px] text-muted-foreground" title={s.cwd}>
             {isChat ? ['Беседа', (caps && matchModel(caps.models, state.settings.model ?? s.model)?.label) ?? s.model].filter(Boolean).join(' · ') : `${baseName(s.cwd)} · ${shortPath(s.cwd)}`}
@@ -185,6 +198,18 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
               onClick={() => ui.set({ fork: { chatId: s.id } })}
             >
               <GitBranchIcon /> Форк чата…
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="py-2.5"
+              onClick={() => {
+                store.meta(s.id, { notifyDone: !s.notifyDone });
+                toast.success(s.notifyDone ? 'Сообщение в Telegram отменено' : 'Пришлю в Telegram, когда закончит', {
+                  description: s.notifyDone ? undefined : 'Один раз — если вы не будете смотреть на этот чат в момент окончания.',
+                });
+              }}
+            >
+              {s.notifyDone ? <BellRingIcon className="text-info" /> : <BellIcon />}
+              {s.notifyDone ? 'Не сообщать, когда закончит' : 'Сообщить в Telegram, когда закончит'}
             </DropdownMenuItem>
             <DropdownMenuItem className="py-2.5" onClick={() => setArchived(s.id, !s.archived)}>
               {s.archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />} {s.archived ? 'Вернуть из архива' : 'В архив'}

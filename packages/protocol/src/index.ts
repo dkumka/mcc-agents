@@ -34,6 +34,8 @@ export interface ChatSummary {
   hidden?: boolean;
   /** In the «Архив» section of the list: out of the way, nothing deleted. A new message brings it back. */
   archived?: boolean;
+  /** «Сообщить в Telegram, когда закончит» is on: one message when the current/next turn ends, then it switches off. */
+  notifyDone?: boolean;
 }
 
 export type ChatMode = 'chat' | 'code';
@@ -390,7 +392,7 @@ export type ClientMessage =
   | { t: 'decide'; chatId: ChatId; decision: ApprovalDecision }
   | { t: 'settings'; chatId: ChatId; settings: ChatSettings }
   | { t: 'stopTask'; chatId: ChatId; taskId: string }
-  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string; archived?: boolean }
+  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string; archived?: boolean; notifyDone?: boolean }
   | { t: 'seen'; chatId: ChatId }
   | { t: 'release'; chatId: ChatId }
   | { t: 'prefs'; prefs: Partial<Prefs> }

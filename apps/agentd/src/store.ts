@@ -19,6 +19,8 @@ export interface ChatMeta {
   hidden?: boolean;
   /** «Архив»: not in the main list; history and files untouched. */
   archived?: boolean;
+  /** One-shot «tell me in Telegram when it's done». */
+  notifyDone?: boolean;
 }
 
 interface StoreData {
