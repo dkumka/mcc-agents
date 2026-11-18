@@ -19,6 +19,7 @@ import {
   XIcon,
   ArchiveIcon,
   ArchiveRestoreIcon,
+  ArrowRightLeftIcon,
   BellRingIcon,
   BellIcon,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { capsCached } from '@/lib/api';
 import { setArchived } from '@/lib/archive';
+import { AGENT_NAME, continueInOtherAgent, otherAgent } from '@/lib/handoff';
 import { baseName, matchModel, shortPath, terminalCommand } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
@@ -166,6 +168,9 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
               onClick={() => ui.set({ fork: { chatId: s.id } })}
             >
               <GitBranchIcon /> Форк чата…
+            </DropdownMenuItem>
+            <DropdownMenuItem className="py-2.5" onClick={() => void continueInOtherAgent(s)}>
+              <ArrowRightLeftIcon /> Продолжить в {AGENT_NAME[otherAgent(s.agent)]}…
             </DropdownMenuItem>
             <DropdownMenuItem
               className="py-2.5"
