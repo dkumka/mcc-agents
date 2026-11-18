@@ -261,6 +261,7 @@ export class Hub implements ChatSink {
     const last = this.lastNotify.get(chat.id) ?? 0;
     if (!force && Date.now() - last < 20_000) return;
     this.lastNotify.set(chat.id, Date.now());
+    log.info(`notify ${chat.id}: ${what}`);
     const text = `${what}\n${AGENT_LABEL[chat.agent]} · ${chat.summary.title.slice(0, 100)}\n${config.publicUrl}/?chat=${encodeURIComponent(chat.id)}`;
     try {
       const p = spawn(config.notifyBin, [text], { stdio: 'ignore' });
