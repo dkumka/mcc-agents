@@ -3,8 +3,9 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, Loader2Icon } from 'lucide-react';
 import type { ChatItem, ChatState, ToolItem } from '@mcc-agents/protocol';
-import { FileBase, Markdown } from '@/components/markdown';
+import { FileBase, Markdown, TaskPrompt } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
+import { store } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { NoticeLine, ThinkingBlock, ToolCard, UserBubble, isVisible } from './items';
 
@@ -42,7 +43,7 @@ const Item = memo(function Item({
     case 'assistant':
       return (
         <div className="min-w-0">
-          <Markdown text={item.text} />
+          <Markdown text={item.text} taskPrompts />
           {item.streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/60 align-middle" />}
         </div>
       );
@@ -182,6 +183,11 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scroller} onScroll={onScroll} className="scrollbar-thin h-full overflow-y-auto overscroll-contain">
+        <TaskPrompt.Provider value={(text) => {
+          const draft = crypto.randomUUID();
+          localStorage.setItem(`draft:task:${draft}`, text);
+          store.navigate({ kind: 'new', agent: state.summary.agent, cwd: state.summary.cwd, mode: state.summary.mode ?? 'code', draft });
+        }}>
         <FileBase.Provider value={state.summary.cwd}>
         <div ref={content} className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-6 pt-4 md:px-6">
           {top.length === 0 && !busy && <div className="py-16 text-center text-sm text-muted-foreground">Сообщений пока нет</div>}
@@ -194,6 +200,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           {footer}
         </div>
         </FileBase.Provider>
+        </TaskPrompt.Provider>
       </div>
       {showDown && (
         <Button

@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ChevronRightIcon, CodeXmlIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ArchiveIcon, CheckIcon, ChevronRightIcon, CodeXmlIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
+import { ChatActions, ProjectActions } from '@/components/chat-actions';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
 import { ResizeHandle } from '@/components/resize-handle';
@@ -13,7 +14,6 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
@@ -29,13 +29,15 @@ import { cn } from '@/lib/utils';
 
 function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPick: () => void }) {
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton isActive={active} onClick={onPick} className="h-auto min-h-10 gap-2 py-2 md:min-h-8 md:py-1.5" title={c.title}>
+    <SidebarMenuItem className="flex items-center gap-1">
+      <SidebarMenuButton isActive={active} onClick={onPick} className="h-auto min-h-10 min-w-0 flex-1 gap-2 py-2" title={c.title}>
         <AgentMark agent={c.agent} className="opacity-90" />
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold')}>{c.title}</span>
+        {c.taskStage && <span title={c.taskStage === 'done' ? 'Готово' : 'В работе'} aria-label={c.taskStage === 'done' ? 'Готово' : 'В работе'} className="inline-flex shrink-0 items-center text-emerald-600">{c.taskStage === 'done' ? <CheckIcon className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}</span>}
         <StatusDot status={c.status} unread={c.unread} />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>
       </SidebarMenuButton>
+      <ChatActions chat={c} />
     </SidebarMenuItem>
   );
 }
@@ -102,6 +104,7 @@ export function AppSidebar() {
   const everConnected = useStore((s) => s.everConnected);
   const { isMobile, setOpenMobile } = useSidebar();
   const [q, setQ] = useState('');
+  const [archive, setArchive] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [settings, setSettings] = useState(false);
@@ -109,24 +112,25 @@ export function AppSidebar() {
 
   const { pinned, groups, dated } = useMemo(() => {
     const list = Object.values(chats)
-      .filter((c) => (c.mode ?? 'code') === mode)
+      .filter((c) => (c.mode ?? 'code') === mode && !c.deleted && !c.projectDeleted)
       .sort((a, b) => b.updatedAt - a.updatedAt);
     const ql = q.trim().toLowerCase();
-    const filtered = ql ? list.filter((c) => c.title.toLowerCase().includes(ql) || (mode === 'code' && c.cwd.toLowerCase().includes(ql))) : list;
-    const pinned = filtered.filter((c) => c.pinned);
+    const searched = ql ? list.filter((c) => c.title.toLowerCase().includes(ql) || (mode === 'code' && c.cwd.toLowerCase().includes(ql))) : list;
+    const filtered = searched.filter((c) => archive ? c.archived || c.projectArchived : mode === 'code' || !c.archived);
+    const pinned = archive ? [] : filtered.filter((c) => c.pinned && !c.archived && !c.projectArchived);
     const by = new Map<string, ChatSummary[]>();
     const dated = new Map<string, ChatSummary[]>();
     for (const c of filtered) {
-      if (c.pinned) continue;
+      if (mode === 'chat' && pinned.includes(c)) continue;
       const key = mode === 'chat' ? dateBucket(c.updatedAt) : c.cwd;
       const into = mode === 'chat' ? dated : by;
       const arr = into.get(key) ?? [];
       arr.push(c);
       into.set(key, arr);
     }
-    const groups = [...by.entries()].sort((a, b) => b[1][0].updatedAt - a[1][0].updatedAt);
+    const groups = [...by.entries()].sort((a, b) => Number(!!a[1][0].projectArchived) - Number(!!b[1][0].projectArchived) || b[1][0].updatedAt - a[1][0].updatedAt);
     return { pinned, groups, dated: [...dated.entries()] };
-  }, [chats, q, mode]);
+  }, [chats, q, mode, archive]);
 
   const pick = (id: string) => {
     store.navigate({ kind: 'chat', chatId: id });
@@ -163,6 +167,7 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent className="scrollbar-thin">
+        <Button variant={archive ? 'secondary' : 'ghost'} className="mx-2 min-h-10 justify-start" onClick={() => setArchive(!archive)}><ArchiveIcon className="size-4" />{archive ? 'Архив · показать текущие' : 'Архив'}</Button>
         {pinned.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>
@@ -190,32 +195,38 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
         {groups.map(([cwd, list]) => {
-          const limit = expanded[cwd] || q ? list.length : 6;
-          const isCollapsed = collapsed[cwd] && !q;
+          const projectArchived = !!list[0].projectArchived;
+          const current = archive || projectArchived ? list : list.filter((chat) => !chat.archived);
+          const archived = archive || projectArchived ? [] : list.filter((chat) => chat.archived);
+          const limit = expanded[cwd] || q ? current.length : 6;
+          const isCollapsed = (collapsed[cwd] ?? projectArchived) && !q;
           return (
             <SidebarGroup key={cwd} className="py-1">
-              <SidebarGroupLabel className="cursor-pointer select-none gap-1 pr-8" title={cwd} onClick={() => setCollapsed((s) => ({ ...s, [cwd]: !s[cwd] }))}>
+              <div className="flex items-center"><SidebarGroupLabel className="min-w-0 flex-1 cursor-pointer select-none gap-1" title={cwd} onClick={() => setCollapsed((s) => ({ ...s, [cwd]: !s[cwd] }))}>
                 <ChevronRightIcon className={cn('size-3 transition-transform', !isCollapsed && 'rotate-90')} />
+                {projectArchived && <ArchiveIcon className="size-3 shrink-0" />}
                 <span className="truncate">{projectLabel(cwd) || cwd}</span>
                 <span className="ml-1 truncate font-normal opacity-60">{shortPath(cwd).replace(/\/[^/]+$/, '')}</span>
               </SidebarGroupLabel>
-              <SidebarGroupAction title="Новый чат в этом проекте" onClick={() => newChat(cwd)} className="size-7 md:size-5">
-                <PlusIcon />
-              </SidebarGroupAction>
+              <ProjectActions cwd={cwd} archived={projectArchived} onNew={() => newChat(cwd)} /></div>
               {!isCollapsed && (
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {list.slice(0, limit).map((c) => (
+                    {current.slice(0, limit).map((c) => (
                       <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} />
                     ))}
-                    {list.length > limit && (
+                    {current.length > limit && (
                       <SidebarMenuItem>
                         <SidebarMenuButton className="text-xs text-muted-foreground" onClick={() => setExpanded((s) => ({ ...s, [cwd]: true }))}>
-                          Ещё {list.length - limit}
+                          Ещё {current.length - limit}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     )}
                   </SidebarMenu>
+                  {archived.length > 0 && <details open={q ? true : undefined}>
+                    <summary className="flex min-h-10 cursor-pointer items-start gap-2 px-2 pt-1 text-xs text-muted-foreground"><ArchiveIcon className="size-3" />Архивные чаты ({archived.length})</summary>
+                    <SidebarMenu>{archived.map((chat) => <ChatRow key={chat.id} c={chat} active={chat.id === activeId} onPick={() => pick(chat.id)} />)}</SidebarMenu>
+                  </details>}
                 </SidebarGroupContent>
               )}
             </SidebarGroup>

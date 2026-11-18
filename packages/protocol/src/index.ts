@@ -8,6 +8,8 @@ export type AgentKind = 'claude' | 'codex';
 /** `${agent}:${nativeId}` — nativeId is the Claude session UUID or the Codex thread id. */
 export type ChatId = string;
 
+export type TaskStage = 'in-progress' | 'done';
+
 export type ChatStatus = 'idle' | 'starting' | 'running' | 'waiting' | 'error';
 
 export interface ChatSummary {
@@ -22,6 +24,11 @@ export interface ChatSummary {
   /** Created from this web UI (otherwise: terminal, CloudCLI, …). */
   origin: 'web' | 'terminal' | 'other';
   pinned?: boolean;
+  archived?: boolean;
+  deleted?: boolean;
+  taskStage?: TaskStage;
+  projectArchived?: boolean;
+  projectDeleted?: boolean;
   unread?: boolean;
   model?: string;
   /** 'chat' — a conversation outside projects (folder ~/chat/<date-id>), 'code' — work in a project. */
@@ -374,7 +381,9 @@ export type ClientMessage =
   | { t: 'decide'; chatId: ChatId; decision: ApprovalDecision }
   | { t: 'settings'; chatId: ChatId; settings: ChatSettings }
   | { t: 'stopTask'; chatId: ChatId; taskId: string }
-  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string }
+  | { t: 'meta'; chatId: ChatId; pinned?: boolean; title?: string; archived?: boolean; taskStage?: TaskStage | null }
+  | { t: 'removeChat'; chatId: ChatId; confirm: string }
+  | { t: 'projectMeta'; cwd: string; action: 'archive' | 'restore' | 'delete'; confirm: string }
   | { t: 'seen'; chatId: ChatId }
   | { t: 'release'; chatId: ChatId }
   | { t: 'prefs'; prefs: Partial<Prefs> }

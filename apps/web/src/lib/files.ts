@@ -97,9 +97,17 @@ export function resolvePath(raw: string, cwd: string, home?: string): string | n
 export function looksLikeFile(s: string): boolean {
   const t = s.trim().replace(/:(\d+)(:\d+)?$/, '');
   if (t.length < 3 || t.length > 300 || /\s/.test(t) || (/^[a-z]+:\/\//i.test(t) && !t.startsWith('file://'))) return false;
-  if (!/\.[A-Za-z0-9]{1,8}$/.test(t)) return false; // needs an extension
+  if (!/\.(?:[A-Za-z0-9]{1,8}|code-workspace)$/.test(t)) return false; // needs an extension
   if (/^(\/|~\/|\.\.?\/|file:\/\/)/.test(t)) return true;
   if (t.includes('/')) return /^[\w.@+-]+(\/[\w.@+ -]+)+$/.test(t);
   // a bare name: only for typical "here is your file" extensions (not `foo.bar()` or `v1.2`)
-  return /^[\w.@+-]+\.(docx?|xlsx?|pptx?|pdf|csv|tsv|zip|tar|gz|png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|txt|md|json|html?|log)$/i.test(t);
+  return /^[\w.@+-]+\.(code-workspace|docx?|xlsx?|pptx?|pdf|csv|tsv|zip|tar|gz|png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|txt|md|json|html?|log)$/i.test(t);
+}
+
+export function isWorkspace(path: string): boolean {
+  return /\.code-workspace$/i.test(path);
+}
+
+export function workspaceUrl(path: string): string {
+  return `https://vscode.mcc.klemid.ru/?${new URLSearchParams({ workspace: path })}`;
 }

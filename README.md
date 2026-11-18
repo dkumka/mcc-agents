@@ -54,3 +54,11 @@ ssh dev@SERVER_IP '~/dev/mcc-agents/scripts/deploy.sh --local'   # собрат�
 | логи | `journalctl -u mcc-agentd -u mcc-agents-web` |
 
 Подробно — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), текущее состояние — [docs/STATUS.md](docs/STATUS.md).
+
+Обновление управления чатами/архива/статусов после завершения всех задач панели
+выполняется из обычного SSH: `sudo bash scripts/deploy-chat-management.sh`.
+Установщик проверяет idle, собирает веб отдельно, резервирует runtime и обновляет
+обе службы. После установки перезагрузить вкладку панели.
+
+Для публикации только веб-интерфейса из SSH: `sudo bash scripts/deploy-web.sh`.
+Скрипт собирает отдельно, сохраняет предыдущую сборку и перезапускает веб-сервис.

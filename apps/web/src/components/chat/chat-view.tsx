@@ -19,9 +19,8 @@ import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/prot
 import { AgentMark } from '@/components/agent-badge';
 import { copyText } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { RenameDialog } from '@/components/chat-actions';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { capsCached } from '@/lib/api';
@@ -62,36 +61,6 @@ function PanelButton({ tab, icon: Icon, label, badge }: { tab: PanelTab; icon: t
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
-  );
-}
-
-function RenameDialog({ open, onOpenChange, chatId, title }: { open: boolean; onOpenChange: (v: boolean) => void; chatId: string; title: string }) {
-  const [v, setV] = useState(title);
-  useEffect(() => setV(title), [title, open]);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Переименовать чат</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            store.meta(chatId, { title: v });
-            onOpenChange(false);
-          }}
-          className="space-y-4"
-        >
-          <Input value={v} onChange={(e) => setV(e.target.value)} autoFocus className="h-11" />
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => (store.meta(chatId, { title: '' }), onOpenChange(false))}>
-              Сбросить
-            </Button>
-            <Button type="submit">Сохранить</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 

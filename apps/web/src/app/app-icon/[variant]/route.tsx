@@ -15,7 +15,7 @@ export function generateStaticParams() {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ variant: string }> }) {
   const v = VARIANTS[(await params).variant] ?? VARIANTS['512'];
-  return new ImageResponse(<AppIconArt px={v.size} maskable={v.maskable} rounded={false} />, {
+  return new ImageResponse(<AppIconArt px={v.size} maskable={v.maskable} rounded={false} light />, {
     width: v.size,
     height: v.size,
     headers: { 'cache-control': 'public, max-age=86400' },

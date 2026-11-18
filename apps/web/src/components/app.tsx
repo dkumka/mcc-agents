@@ -61,7 +61,7 @@ export function App() {
             {route.kind === 'chat' ? (
               <ChatView key={route.chatId} chatId={route.chatId} />
             ) : (
-              <NewChat mode={mode} initialCwd={route.kind === 'new' ? route.cwd : undefined} initialAgent={route.kind === 'new' ? route.agent : undefined} />
+              <NewChat key={route.kind === 'new' ? route.draft : undefined} draft={route.kind === 'new' ? route.draft : undefined} mode={mode} initialCwd={route.kind === 'new' ? route.cwd : undefined} initialAgent={route.kind === 'new' ? route.agent : undefined} />
             )}
           </div>
           <Panel />

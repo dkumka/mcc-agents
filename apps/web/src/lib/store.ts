@@ -18,7 +18,7 @@ import type {
   ServerMessage,
 } from '@mcc-agents/protocol';
 
-export type Route = { kind: 'chat'; chatId: string } | { kind: 'new'; cwd?: string; agent?: AgentKind; mode?: ChatMode } | { kind: 'home' };
+export type Route = { kind: 'chat'; chatId: string } | { kind: 'new'; cwd?: string; agent?: AgentKind; mode?: ChatMode; draft?: string } | { kind: 'home' };
 
 /** Last mode the user was in ("Чат" / "Код"): used when the route itself doesn't say. */
 function storedMode(): ChatMode {
@@ -55,7 +55,7 @@ function routeFromUrl(): Route {
   const mode = u.searchParams.get('mode');
   const m = mode === 'chat' || mode === 'code' ? mode : undefined;
   if (u.searchParams.has('new') || m)
-    return { kind: 'new', cwd: u.searchParams.get('cwd') ?? undefined, agent: (u.searchParams.get('agent') as AgentKind) ?? undefined, mode: m };
+    return { kind: 'new', cwd: u.searchParams.get('cwd') ?? undefined, agent: (u.searchParams.get('agent') as AgentKind) ?? undefined, mode: m, draft: u.searchParams.get('draft') ?? undefined };
   return { kind: 'home' };
 }
 
@@ -63,6 +63,7 @@ function urlFor(r: Route): string {
   if (r.kind === 'chat') return `/?chat=${encodeURIComponent(r.chatId)}`;
   if (r.kind === 'new') {
     const p = new URLSearchParams({ new: '1' });
+    if (r.draft) p.set('draft', r.draft);
     if (r.mode) p.set('mode', r.mode);
     if (r.cwd) p.set('cwd', r.cwd);
     if (r.agent) p.set('agent', r.agent);
@@ -226,7 +227,10 @@ class Store {
         this.set({ chats: { ...this.state.chats, [m.chat.id]: m.chat } });
         const st = this.state.states[m.chat.id];
         if (st) this.setChatState(m.chat.id, { ...st, summary: m.chat });
-        if (this.state.route.kind === 'chat' && this.state.route.chatId === m.chat.id) this.syncOpenChatMode();
+        if (this.state.route.kind === 'chat' && this.state.route.chatId === m.chat.id) {
+          if (m.chat.deleted || m.chat.projectDeleted) this.navigate({ kind: 'new', mode: m.chat.mode });
+          else this.syncOpenChatMode();
+        }
         return;
       }
       case 'chatRemoved': {
@@ -379,8 +383,7 @@ class Store {
   }
 
   setSettings(chatId: string, settings: ChatSettings) {
-    const st = this.state.states[chatId];
-    if (st) this.setChatState(chatId, { ...st, settings: { ...st.settings, ...settings } });
+    // Wait for the server patch: CLI permission changes can be rejected.
     this.send({ t: 'settings', chatId, settings });
   }
 
@@ -393,7 +396,7 @@ class Store {
     this.send({ t: 'prefs', prefs: p });
   }
 
-  meta(chatId: string, m: { pinned?: boolean; title?: string }) {
+  meta(chatId: string, m: { pinned?: boolean; title?: string; archived?: boolean; taskStage?: 'in-progress' | 'done' | null }) {
     this.send({ t: 'meta', chatId, ...m });
   }
 

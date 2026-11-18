@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpIcon, BrainIcon, CheckIcon, ChevronDownIcon, CpuIcon, FileIcon, Loader2Icon, MicIcon, PaperclipIcon, ShieldIcon, SlashIcon, SquareIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AgentCapabilities, AttachedFile, ChatSettings, SendPayload } from '@mcc-agents/protocol';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { rawUrl } from '@/lib/files';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { api, uploadFile } from '@/lib/api';
@@ -74,9 +76,10 @@ const MODE_SHORT: Record<string, string> = {
   default: 'Спрос',
   untrusted: 'Спрос',
   acceptEdits: 'Правки',
-  'on-request': 'Сам',
-  bypassPermissions: 'Без вопр.',
-  never: 'Без вопр.',
+  'on-request': 'Проект',
+  'read-only': 'Чтение',
+  bypassPermissions: 'Полный',
+  never: 'Полный',
 };
 
 function Chip({ icon: Icon, children, className, compact, ...p }: React.ComponentProps<'button'> & { icon: typeof CpuIcon; compact?: boolean }) {
@@ -252,6 +255,7 @@ export function Composer({
 }) {
   const [text, setText] = useState('');
   const [images, setImages] = useState<Img[]>([]);
+  const [imagePreview, setImagePreview] = useState<Img | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [popup, setPopup] = useState<Popup>(null);
   const [sel, setSel] = useState(0);
@@ -264,6 +268,7 @@ export function Composer({
   useEffect(() => {
     setText(localStorage.getItem(`draft:${draftKey}`) ?? '');
     setImages([]);
+    setImagePreview(null);
     setAttachments([]);
   }, [draftKey]);
   useEffect(() => {
@@ -406,7 +411,7 @@ export function Composer({
   );
   // «Вставить» from the dictation history in Settings
   const insertRef = useRef(insertDictation);
-  insertRef.current = insertDictation;
+  useEffect(() => { insertRef.current = insertDictation; });
   useEffect(() => {
     const on = (e: Event) => insertRef.current((e as CustomEvent<string>).detail, false);
     window.addEventListener('mcc:insert-text', on);
@@ -449,6 +454,14 @@ export function Composer({
 
   return (
     <div className="relative mx-auto w-full max-w-3xl px-3 md:px-6">
+      <Dialog open={imagePreview !== null} onOpenChange={(open) => { if (!open) setImagePreview(null); }}>
+        <DialogContent className="max-h-[90dvh] overflow-auto sm:max-w-4xl">
+          <DialogTitle className="break-words pr-6">{imagePreview?.name || 'Предпросмотр изображения'}</DialogTitle>
+          <DialogDescription className="sr-only">Изображение, добавленное к сообщению</DialogDescription>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {imagePreview && <img src={original(imagePreview)?.path ? rawUrl(original(imagePreview)!.path) : imagePreview.preview} alt={imagePreview.name} className="max-h-[75dvh] w-full object-contain" />}
+        </DialogContent>
+      </Dialog>
       {popup && options.length > 0 && (
         <div className="absolute inset-x-3 bottom-full z-30 mb-2 overflow-hidden rounded-xl border bg-popover shadow-xl md:inset-x-6">
           <div className="flex items-center gap-1.5 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
@@ -520,10 +533,12 @@ export function Composer({
           <div className="flex gap-2 overflow-x-auto px-3 pt-3">
             {images.map((im, i) => (
               <div key={i} className="relative shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={im.preview} alt={im.name} className="size-16 rounded-lg border object-cover" />
+                <button type="button" onClick={() => setImagePreview(im)} aria-label={`Просмотреть ${im.name}`} className="block cursor-pointer rounded-lg transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-ring">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={im.preview} alt={im.name} className="size-16 rounded-lg border object-cover" />
+                </button>
                 {im.uploadId && !original(im) && attachments.some((a) => a.id === im.uploadId) && (
-                  <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/50" title="Сохраняю оригинал на сервере">
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/50" title="Сохраняю оригинал на сервере">
                     <Loader2Icon className="size-4 animate-spin" />
                   </span>
                 )}

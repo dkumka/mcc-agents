@@ -267,12 +267,19 @@
 .md code.file-link:hover {
   text-decoration-style: solid;
 }
-.md table {
-  display: block;
+.md-table {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  margin: 0.75em 0;
+  overscroll-behavior-x: contain;
+}
+.md table {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.92em;
-  max-width: 100%;
+  max-width: none;
 }
 .md th,
 .md td {
@@ -280,6 +287,9 @@
   padding: 0.35em 0.6em;
   text-align: left;
   vertical-align: top;
+  min-width: 8rem;
+  max-width: 32rem;
+  overflow-wrap: anywhere;
 }
 .md th {
   background: var(--muted);
@@ -413,4 +423,13 @@ html[data-resizing] * {
   [data-slot='dialog-content'].file-viewer {
     height: min(90vh, 1000px);
   }
+}
+
+/* Match the pointer cursor to enabled click targets, including portalled menus. */
+button:enabled:not([aria-disabled="true"]):not([data-sidebar="rail"]),
+[role="button"]:not([aria-disabled="true"]):not([data-disabled]),
+[role="menuitem"]:not([aria-disabled="true"]):not([data-disabled]),
+[role="menuitemradio"]:not([aria-disabled="true"]):not([data-disabled]),
+[role="menuitemcheckbox"]:not([aria-disabled="true"]):not([data-disabled]) {
+  cursor: pointer;
 }

@@ -21,7 +21,7 @@ import { Chat, type ChatSink } from './chat.ts';
 import { CHAT_ROOT, isChatDir, newChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
-import { store } from './store.ts';
+import { store, type ChatMeta } from './store.ts';
 import { TelegramBridge } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
 import { textWithFiles } from './uploads.ts';
@@ -107,6 +107,12 @@ export class Hub implements ChatSink {
     const out = { ...s };
     if (meta.title) out.title = meta.title;
     out.pinned = !!meta.pinned;
+    out.archived = !!meta.archived;
+    out.deleted = !!meta.deleted;
+    out.taskStage = meta.taskStage ?? undefined;
+    const project = store.project(s.cwd);
+    out.projectArchived = !!project.archived;
+    out.projectDeleted = !!project.deleted;
     out.mode = isChatDir(out.cwd) ? 'chat' : 'code';
     if (meta.web && out.origin !== 'web') out.origin = 'web';
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
@@ -170,6 +176,7 @@ export class Hub implements ChatSink {
   projects(): ProjectInfo[] {
     const map = new Map<string, ProjectInfo>();
     const add = (p: string, at: number, count: number) => {
+      if (store.project(p).deleted || store.project(p).archived) return;
       const cur = map.get(p);
       if (cur) {
         cur.lastActivity = Math.max(cur.lastActivity, at);
@@ -184,7 +191,7 @@ export class Hub implements ChatSink {
       } catch {}
     }
     // conversations (~/chat/…) are not projects
-    for (const c of this.chats.values()) if (c.cwd && !isChatDir(c.cwd) && fs.existsSync(c.cwd)) add(c.cwd, c.summary.updatedAt, 1);
+    for (const c of this.chats.values()) if (!store.meta(c.id).deleted && c.cwd && !isChatDir(c.cwd) && fs.existsSync(c.cwd)) add(c.cwd, c.summary.updatedAt, 1);
     map.delete(CHAT_ROOT);
     for (const p of map.values()) p.isGit = fs.existsSync(path.join(p.path, '.git'));
     return [...map.values()].sort((a, b) => b.lastActivity - a.lastActivity || a.name.localeCompare(b.name));
@@ -345,6 +352,7 @@ export class Hub implements ChatSink {
         if (!adapter) throw new Error('неизвестный агент');
         if (msg.mode === 'chat') msg.cwd = newChatDir();
         else if (!msg.cwd || !fs.existsSync(msg.cwd)) throw new Error(`папка не найдена: ${msg.cwd}`);
+        if (store.project(msg.cwd).deleted || store.project(msg.cwd).archived) store.setProject(msg.cwd, { deleted: false, archived: false });
         const settings: ChatSettings = { ...msg.settings };
         const nativeId = await adapter.prepare(msg.cwd, settings);
         const id = `${msg.agent}:${nativeId}`;
@@ -435,11 +443,37 @@ export class Hub implements ChatSink {
       }
       case 'meta': {
         const chat = this.need(msg.chatId);
-        const patch: { pinned?: boolean; title?: string } = {};
+        const patch: Partial<ChatMeta> = {};
+        if (msg.archived !== undefined) patch.archived = !!msg.archived;
+        if (msg.taskStage !== undefined) {
+          if (msg.taskStage !== null && msg.taskStage !== 'done' && msg.taskStage !== 'in-progress') throw new Error('Неизвестный статус задачи');
+          patch.taskStage = msg.taskStage;
+        }
         if (msg.pinned !== undefined) patch.pinned = msg.pinned;
         if (msg.title !== undefined) patch.title = msg.title.trim() || undefined;
         store.setMeta(chat.id, patch);
         this.summaryChanged(chat);
+        return;
+      }
+      case 'removeChat': {
+        const chat = this.need(msg.chatId);
+        if (msg.confirm !== this.decorate(chat.summary).title) throw new Error('Введите название чата для подтверждения');
+        this.requireIdle([chat]);
+        store.setMeta(chat.id, { deleted: true, pinned: false });
+        this.summaryChanged(chat);
+        return;
+      }
+      case 'projectMeta': {
+        const chats = [...this.chats.values()].filter((chat) => chat.cwd === msg.cwd);
+        if (!chats.length) throw new Error('Проект не найден');
+        if (msg.confirm !== path.basename(msg.cwd)) throw new Error('Введите название папки проекта для подтверждения');
+        if (!['archive', 'restore', 'delete'].includes(msg.action)) throw new Error('Неизвестное действие проекта');
+        if (msg.action === 'delete') {
+          this.requireIdle(chats);
+          for (const chat of chats) store.setMeta(chat.id, { deleted: true, pinned: false });
+        }
+        store.setProject(msg.cwd, { archived: msg.action === 'archive', deleted: msg.action === 'delete' });
+        for (const chat of chats) this.summaryChanged(chat);
         return;
       }
       case 'release': {
@@ -447,6 +481,12 @@ export class Hub implements ChatSink {
         await this.adapters[chat.agent].release(chat);
         return;
       }
+    }
+  }
+
+  private requireIdle(chats: Chat[]) {
+    if (chats.some((chat) => ['starting', 'running', 'waiting'].includes(chat.summary.status) || chat.state.tasks.some((task) => task.status === 'running'))) {
+      throw new Error('Сначала завершите активные задачи');
     }
   }
 

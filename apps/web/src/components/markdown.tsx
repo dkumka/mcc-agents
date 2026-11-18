@@ -5,17 +5,27 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { looksLikeFile, rawUrl as rawUrlFor, resolvePath } from '@/lib/files';
+import { isWorkspace, looksLikeFile, rawUrl as rawUrlFor, resolvePath, workspaceUrl } from '@/lib/files';
+import { writingBlocks } from '@/lib/writing-blocks';
+import { taskPrompt } from '@/lib/task-prompt';
 import { ui } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 
 /** Chat folder: paths the agent mentions are resolved against it and become clickable. */
 export const FileBase = createContext<string | null>(null);
 
+export function WorkspaceActions({ path }: { path: string }) {
+  return <span className="inline-flex max-w-full flex-wrap items-center gap-1 align-middle text-xs">
+    <a href={workspaceUrl(path)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center rounded-md border px-2 hover:bg-muted">Открыть в VS Code</a>
+    <button type="button" onClick={() => ui.previewFile(path)} className="min-h-10 rounded-md border px-2 hover:bg-muted">Просмотреть</button>
+  </span>;
+}
+
 function FilePathCode({ text }: { text: string }) {
   const cwd = useContext(FileBase);
   const path = cwd && looksLikeFile(text) ? resolvePath(text, cwd) : null;
   if (!path) return <code>{text}</code>;
+  if (isWorkspace(path)) return <span><code className="break-anywhere">{text}</code> <WorkspaceActions path={path} /></span>;
   return (
     <code
       role="button"
@@ -40,6 +50,7 @@ function LinkOrFile({ href, children }: { href?: string; children?: React.ReactN
     } catch {}
     if (looksLikeFile(target)) path = resolvePath(target, cwd);
   }
+  if (path && isWorkspace(path)) return <span>{children} <WorkspaceActions path={path} /></span>;
   if (path)
     return (
       <a
@@ -106,6 +117,19 @@ function nodeText(n: unknown): string {
   return '';
 }
 
+export const TaskPrompt = createContext<((text: string) => void) | null>(null);
+
+function PromptBlock({ text }: { text: string }) {
+  const open = useContext(TaskPrompt);
+  return <div className="my-2 min-w-0 overflow-hidden rounded-lg border bg-muted/40">
+    <div className="flex flex-wrap items-center justify-between gap-1 border-b px-3 py-1">
+      <span className="text-xs text-muted-foreground">Готовый промпт</span>
+      <button type="button" className="min-h-10 rounded-md px-2 text-sm hover:bg-muted" onClick={() => open?.(text)}>Открыть как новую задачу</button>
+    </div>
+    <pre className="whitespace-pre-wrap break-words p-3 text-sm [overflow-wrap:anywhere]">{text}</pre>
+  </div>;
+}
+
 const components: Components = {
   pre({ children }) {
     const code = nodeText(children);
@@ -133,15 +157,28 @@ const components: Components = {
     return <code className={className}>{children}</code>;
   },
   table({ children }) {
-    return <table>{children}</table>;
+    return <div className="md-table scrollbar-thin" role="region" aria-label="Таблица" tabIndex={0}><table>{children}</table></div>;
   },
 };
 
-export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
+export const Markdown = memo(function Markdown({ text, className, taskPrompts = false }: { text: string; className?: string; taskPrompts?: boolean }) {
+  const renderedText = writingBlocks(text);
   return (
-    <div className={cn('md text-[15px] md:text-sm', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} components={components}>
-        {text}
+    <div className={cn('md min-w-0 text-[15px] md:text-sm', className)}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} components={taskPrompts ? { ...components, pre({ node, children }) {
+        const child = node?.children[0];
+        if (child?.type === 'element' && child.properties.className instanceof Array && child.properties.className.includes('language-mcc-task')) {
+          const start = node?.position?.start.offset;
+          const end = node?.position?.end.offset;
+          const raw = start !== undefined && end !== undefined ? renderedText.slice(start, end) : '';
+          // Only complete fences are actionable, including while a response streams.
+          const prompt = taskPrompt(raw);
+          if (prompt !== null) return <PromptBlock text={prompt} />;
+        }
+        const Pre = components.pre!;
+        return <Pre node={node}>{children}</Pre>;
+      } } : components}>
+        {renderedText}
       </ReactMarkdown>
     </div>
   );

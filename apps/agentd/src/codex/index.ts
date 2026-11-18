@@ -1,3 +1,4 @@
+import { TASK_PROMPT_INSTRUCTIONS } from '../task-prompt.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +12,6 @@ import type {
   ChatSummary,
   FileDiff,
   LimitWindow,
-  PermissionModeInfo,
   SendPayload,
   ToolStatus,
 } from '@mcc-agents/protocol';
@@ -27,9 +27,8 @@ import { splitFiles } from '../uploads.ts';
 const log = logger('codex');
 type Json = Record<string, any>;
 
-export const CODEX_MODES: PermissionModeInfo[] = [
-  { id: 'on-request', label: 'Спрашивать', description: 'Запрашивать разрешение на выход за рамки проекта' },
-];
+import { CODEX_MODES, codexPermissions } from './permissions.ts';
+export { CODEX_MODES } from './permissions.ts';
 
 function durationLabel(mins?: number | null) {
   if (!mins) return 'Лимит';
@@ -283,13 +282,15 @@ export class CodexAdapter implements Adapter {
 
   async load(chat: Chat) {
     const tid = chat.nativeId;
-    const r: Json = await this.rpc.request('thread/resume', { threadId: tid, excludeTurns: true, sandbox: 'workspace-write', approvalPolicy: 'on-request' }, 60_000);
-    this.loaded.add(tid);
     const meta = store.meta(chat.id);
+    const permissionMode = meta.settings?.permissionMode ?? 'on-request';
+    const { sandbox, approvalPolicy } = codexPermissions(permissionMode);
+    const r: Json = await this.rpc.request('thread/resume', { threadId: tid, developerInstructions: TASK_PROMPT_INSTRUCTIONS, excludeTurns: true, sandbox, approvalPolicy }, 60_000);
+    this.loaded.add(tid);
     chat.state.settings = {
       model: meta.settings?.model ?? r?.model ?? undefined,
       effort: meta.settings?.effort ?? r?.reasoningEffort ?? undefined,
-      permissionMode: meta.settings?.permissionMode ?? (typeof r?.approvalPolicy === 'string' ? r.approvalPolicy : undefined),
+      permissionMode,
     };
     const items: ChatItem[] = [];
     let cursor: string | null = null;
@@ -319,11 +320,13 @@ export class CodexAdapter implements Adapter {
   // ------------------------------------------------------------ actions
 
   async prepare(cwd: string, settings: ChatSettings): Promise<string> {
+    const { sandbox, approvalPolicy } = codexPermissions(settings.permissionMode);
     const r: Json = await this.rpc.request('thread/start', {
+      developerInstructions: TASK_PROMPT_INSTRUCTIONS,
       cwd,
       model: settings.model || null,
-      approvalPolicy: 'on-request',
-      sandbox: 'workspace-write',
+      approvalPolicy,
+      sandbox,
     });
     const tid = r?.thread?.id;
     if (!tid) throw new Error('codex не создал тред');
@@ -362,6 +365,7 @@ export class CodexAdapter implements Adapter {
       return;
     }
     const s = chat.state.settings;
+    const { approvalPolicy, sandboxPolicy } = codexPermissions(s.permissionMode);
     chat.setStatus('running');
     const r: Json = await this.rpc.request('turn/start', {
       threadId: tid,
@@ -369,7 +373,8 @@ export class CodexAdapter implements Adapter {
       clientUserMessageId: uuid,
       model: s.model || null,
       effort: s.effort || null,
-      approvalPolicy: 'on-request',
+      approvalPolicy,
+      sandboxPolicy,
     });
     if (r?.turn?.id) this.activeTurn.set(tid, r.turn.id);
   }
@@ -420,8 +425,14 @@ export class CodexAdapter implements Adapter {
     chat.removeApproval(d.approvalId);
   }
 
-  async applySettings(_chat: Chat, _s: ChatSettings) {
-    // model / effort / approval policy are sent with every turn/start
+  async applySettings(chat: Chat, settings: ChatSettings) {
+    if (settings.permissionMode !== undefined) {
+      codexPermissions(settings.permissionMode);
+      if (settings.permissionMode !== chat.state.settings.permissionMode && this.activeTurn.has(chat.nativeId)) {
+        throw new Error('Остановите текущий ход Codex перед сменой режима доступа.');
+      }
+    }
+    // Both permission controls are sent on the next turn/start, including after resume.
   }
 
   async stopTask() {
@@ -622,12 +633,6 @@ export class CodexAdapter implements Adapter {
           defaultEffort: m.defaultReasoningEffort ?? undefined,
           isDefault: !!m.isDefault,
         }));
-      let approval = 'on-request';
-      try {
-        const c: Json = await this.rpc.request('config/read', {}, 15_000);
-        const v = c?.config?.approval_policy ?? c?.config?.approvalPolicy;
-        if (typeof v === 'string') approval = v;
-      } catch {}
       const def = models.find((m) => m.isDefault) ?? models[0];
       const caps: AgentCapabilities = {
         agent: 'codex',
@@ -635,7 +640,7 @@ export class CodexAdapter implements Adapter {
         plan: this.plan,
         models,
         permissionModes: CODEX_MODES,
-        defaults: { model: def?.id, effort: def?.defaultEffort, permissionMode: approval },
+        defaults: { model: def?.id, effort: def?.defaultEffort, permissionMode: 'on-request' },
         commands: [{ name: 'compact', description: 'Сжать контекст треда' }],
       };
       this.capsCache = { at: Date.now(), caps };

@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { api } from '@/lib/api';
 import { diffStats, parseUnified, splitGitDiff } from '@/lib/diff';
-import { displayName, fileKind, fmtSize, rawUrl } from '@/lib/files';
+import { displayName, fileKind, fmtSize, isWorkspace, rawUrl, workspaceUrl } from '@/lib/files';
 import { shortPath, timeAgo } from '@/lib/format';
 import { store } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
@@ -87,12 +87,28 @@ function Changes({ cwd, wrap }: { cwd: string; wrap: boolean }) {
 // ---------------------------------------------------------------- files
 
 function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
+  const panelFile = useUi((s) => s.panelFile);
   const [dir, setDir] = useState(cwd);
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [file, setFile] = useState<{ path: string; content: string; truncated: boolean; binary: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [uploadsDir, setUploadsDir] = useState<string | null>(null);
-  useEffect(() => setDir(cwd), [cwd]);
+  useEffect(() => {
+    setDir(cwd);
+    setFile(null);
+  }, [cwd]);
+  useEffect(() => {
+    if (!panelFile) return;
+    let cancelled = false;
+    setFile(null);
+    setErr(null);
+    api.file(panelFile).then((f) => {
+      if (!cancelled) setFile(f);
+    }).catch((e) => {
+      if (!cancelled) setErr(e.message);
+    });
+    return () => { cancelled = true; };
+  }, [panelFile]);
   useEffect(() => {
     api.uploads().then((u) => setUploadsDir(u.dir)).catch(() => {});
   }, []);
@@ -118,17 +134,17 @@ function Files({ cwd, wrap }: { cwd: string; wrap: boolean }) {
   if (file)
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex items-center gap-1 border-b px-2 py-1.5">
-          <Button variant="ghost" size="icon" className="size-8" onClick={() => setFile(null)} aria-label="Назад">
+        <div className="flex flex-wrap items-center gap-1 border-b px-2 py-1.5">
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => { setFile(null); ui.set({ panelFile: null }); }} aria-label="Назад">
             <ArrowLeftIcon className="size-4" />
           </Button>
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{shortPath(file.path, cwd)}</span>
           <CopyButton text={file.path} label="путь" />
-          <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Скачать" title="Скачать">
+          {isWorkspace(file.path) ? <a href={workspaceUrl(file.path)} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-10 items-center rounded-md border px-2 text-xs hover:bg-muted">Открыть в VS Code</a> : <Button asChild variant="ghost" size="icon" className="size-8" aria-label="Скачать" title="Скачать">
             <a href={rawUrl(file.path, { dl: true })} download={displayName(file.path)}>
               <DownloadIcon className="size-4" />
             </a>
-          </Button>
+          </Button>}
         </div>
         <div className="scrollbar-thin min-h-0 flex-1 overflow-auto py-2">
           {file.binary ? (

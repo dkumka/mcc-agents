@@ -15,11 +15,11 @@ import {
   XIcon,
 } from 'lucide-react';
 import { CodeView } from '@/components/code-view';
-import { CopyButton } from '@/components/markdown';
+import { CopyButton, WorkspaceActions } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { api } from '@/lib/api';
-import { browserImage, displayName, extOf, fileKind, fmtSize, isIOS, rawUrl, type FileKind } from '@/lib/files';
+import { browserImage, displayName, extOf, fileKind, fmtSize, isIOS, isWorkspace, rawUrl, type FileKind } from '@/lib/files';
 import { ui, useUi, type ViewerFile } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 
@@ -77,6 +77,7 @@ export function FileTypeIcon({ name, className }: { name: string; className?: st
 /** Small "open / download" pair for a file path (diff headers, tool cards). */
 export function FileActions({ path, className }: { path: string; className?: string }) {
   const name = displayName(path);
+  if (isWorkspace(path)) return <WorkspaceActions path={path} />;
   return (
     <span className={cn('inline-flex shrink-0 items-center', className)} onClick={(e) => e.stopPropagation()}>
       <button

@@ -18,10 +18,11 @@ interface UiState {
   panel: PanelTab | null;
   /** Wrap long lines in the side panel (files, diffs). */
   wrap: boolean;
+  panelFile: string | null;
   viewer: ViewerFile | null;
 }
 
-let state: UiState = { panel: null, wrap: true, viewer: null };
+let state: UiState = { panel: null, wrap: true, panelFile: null, viewer: null };
 if (typeof window !== 'undefined') state.wrap = localStorage.getItem('panelWrap') !== '0';
 const listeners = new Set<() => void>();
 
@@ -37,6 +38,9 @@ export const ui = {
   },
   openFile(f: ViewerFile) {
     ui.set({ viewer: f });
+  },
+  previewFile(path: string) {
+    ui.set({ panel: 'files', panelFile: path });
   },
   togglePanel(tab: PanelTab) {
     ui.set({ panel: state.panel === tab ? null : tab });

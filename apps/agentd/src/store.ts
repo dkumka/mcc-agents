@@ -9,6 +9,9 @@ const log = logger('store');
 /** UI-only metadata. The CLIs' own session files stay the source of truth for history. */
 export interface ChatMeta {
   pinned?: boolean;
+  archived?: boolean;
+  deleted?: boolean;
+  taskStage?: 'in-progress' | 'done' | null;
   title?: string;
   lastSeen?: number;
   settings?: ChatSettings;
@@ -19,6 +22,7 @@ export interface ChatMeta {
 interface StoreData {
   version: 1;
   meta: Record<string, ChatMeta>;
+  projects: Record<string, { archived?: boolean; deleted?: boolean }>;
   limits: Record<string, AgentLimits>;
   /** model id → context window (learned from the CLI). */
   windows: Record<string, number>;
@@ -40,7 +44,7 @@ export interface TgMessage {
 
 const file = path.join(config.dataDir, 'state.json');
 const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60, voiceModel: 'microsoft/mai-transcribe-2', voiceAutoSend: false, voiceCleanup: true, voiceCleanupModel: 'google/gemini-3.1-flash-lite', voiceTranslate: false };
-let data: StoreData = { version: 1, meta: {}, limits: {}, windows: {}, lastSettings: {}, prefs: { ...DEFAULT_PREFS }, tgOffset: 0, tgMessages: {} };
+let data: StoreData = { version: 1, meta: {}, projects: {}, limits: {}, windows: {}, lastSettings: {}, prefs: { ...DEFAULT_PREFS }, tgOffset: 0, tgMessages: {} };
 let timer: NodeJS.Timeout | null = null;
 
 export function loadStore() {
@@ -80,6 +84,13 @@ export function flushStore() {
 }
 
 export const store = {
+  project(cwd: string) {
+    return data.projects[cwd] ?? {};
+  },
+  setProject(cwd: string, patch: { archived?: boolean; deleted?: boolean }) {
+    data.projects[cwd] = { ...data.projects[cwd], ...patch };
+    save();
+  },
   meta(id: string): ChatMeta {
     return data.meta[id] ?? {};
   },

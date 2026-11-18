@@ -113,8 +113,8 @@ function chatDefaults(agent: AgentKind, caps: AgentCapabilities): ChatSettings {
   return { model: caps.defaults.model, effort: caps.defaults.effort, permissionMode: has('on-request') ? 'on-request' : caps.defaults.permissionMode };
 }
 
-export function NewChat({ initialCwd, initialAgent, mode = 'code' }: { initialCwd?: string; initialAgent?: AgentKind; mode?: ChatMode }) {
-  return mode === 'chat' ? <NewConversation key="chat" initialAgent={initialAgent} /> : <NewProjectChat key="code" initialCwd={initialCwd} initialAgent={initialAgent} />;
+export function NewChat({ initialCwd, initialAgent, draft, mode = 'code' }: { initialCwd?: string; initialAgent?: AgentKind; draft?: string; mode?: ChatMode }) {
+  return mode === 'chat' ? <NewConversation draft={draft} key="chat" initialAgent={initialAgent} /> : <NewProjectChat draft={draft} key="code" initialCwd={initialCwd} initialAgent={initialAgent} />;
 }
 
 function AgentCards({ agent, onChange, compact }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean }) {
@@ -151,7 +151,7 @@ function greeting(): string {
 }
 
 /** "Чат" mode: no project, a fresh folder per conversation is made by the server. */
-function NewConversation({ initialAgent }: { initialAgent?: AgentKind }) {
+function NewConversation({ initialAgent, draft }: { initialAgent?: AgentKind; draft?: string }) {
   const [agent, setAgent] = useState<AgentKind>(initialAgent ?? 'claude');
   const [settings, setSettings] = useState<ChatSettings>({});
   const [sending, setSending] = useState(false);
@@ -180,7 +180,7 @@ function NewConversation({ initialAgent }: { initialAgent?: AgentKind }) {
 
   const composer = (
     <Composer
-      draftKey={`new-chat:${agent}`}
+      draftKey={draft ? `task:${draft}` : `new-chat:${agent}`}
       cwd={HOME}
       caps={caps}
       settings={settings}
@@ -224,7 +224,7 @@ function NewConversation({ initialAgent }: { initialAgent?: AgentKind }) {
   );
 }
 
-function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; initialAgent?: AgentKind }) {
+function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: string; initialAgent?: AgentKind; draft?: string }) {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [cwd, setCwd] = useState(initialCwd ?? '');
   const [agent, setAgent] = useState<AgentKind>(initialAgent ?? ((typeof window !== 'undefined' && (localStorage.getItem('lastAgent') as AgentKind)) || 'claude'));
@@ -308,7 +308,7 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
       </div>
       <div className="pb-safe shrink-0 pt-2">
         <Composer
-          draftKey={`new:${agent}`}
+          draftKey={draft ? `task:${draft}` : `new:${agent}`}
           cwd={cwd || HOME}
           caps={caps}
           settings={settings}

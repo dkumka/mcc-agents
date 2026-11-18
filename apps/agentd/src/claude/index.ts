@@ -1,3 +1,4 @@
+import { TASK_PROMPT_INSTRUCTIONS } from '../task-prompt.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -31,6 +32,7 @@ export const CLAUDE_MODES: PermissionModeInfo[] = [
   { id: 'acceptEdits', label: 'Принимать правки', description: 'Правки файлов без вопросов, команды — с подтверждением' },
   { id: 'plan', label: 'План', description: 'Только читает код и предлагает план' },
   { id: 'auto', label: 'Авто', description: 'Claude сам решает, что безопасно' },
+  { id: 'bypassPermissions', label: 'Полный доступ', description: 'Команды и файлы без подтверждений, в пределах прав пользователя Linux' },
 ];
 
 const LIMIT_LABELS: Record<string, string> = {
@@ -117,6 +119,8 @@ class ClaudeProc {
     this.norm = new ClaudeNormalizer(chat, false);
     const args = [
       ...BASE_ARGS,
+      '--allow-dangerously-skip-permissions',
+      '--append-system-prompt', TASK_PROMPT_INSTRUCTIONS,
       '--include-partial-messages',
       '--permission-prompt-tool',
       'stdio',
