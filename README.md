@@ -24,18 +24,21 @@ docs/            ARCHITECTURE.md — как устроено, STATUS.md — чт
 
 ## Разработка
 
-Код пишется где угодно, но **запускается только на сервере** — там залогинены `claude`/`codex` и лежат сессии.
-На Mac `claude`/`codex` и Node для этого проекта не запускаем.
+Код правится и запускается прямо на сервере, в `~/dev/mcc/mcc-agents`: там залогинены `claude`/`codex` и лежат сессии.
+Веб-интерфейс работает из этой папки, демон — из runtime `~/.local/share/mcc-klemid/agents`.
+
+Выкатка — после коммита и push, из SSH, когда в панели нет активных задач:
 
 ```bash
-scripts/sync.sh                     # Mac → ~/dev/mcc/mcc-agents на сервере (rsync); если там ровно origin/main — git тоже туда (git-align.sh)
-scripts/sync.sh --pull              # обратно: файлы, созданные на сервере (package-lock, компоненты shadcn)
-ssh dev@SERVER_IP '~/dev/mcc/mcc-agents/scripts/deploy.sh --local'   # собрать и перезапустить то, что залито
+sudo bash ~/dev/mcc/mcc-agents/scripts/deploy-server.sh          # веб и, если менялись agentd/протокол, демон
+sudo bash ~/dev/mcc/mcc-agents/scripts/deploy-server.sh --web    # только веб, демон не трогать
 ```
 
-Боевое обновление — через GitHub: коммит → `git push` → на сервере `scripts/deploy.sh` (подтянет `origin/main`,
-`npm install` при смене зависимостей, `next build`, перезапуск веба; демон — только если менялись `apps/agentd` или
-`packages/protocol`, и не при занятых чатах — иначе `--force`).
+Скрипт проверяет типы и тесты, собирает веб отдельно от работающего, проверяет `busy`, сохраняет runtime, `.next` и
+`state.json` в `/var/backups/mcc-agents-deploy.*`, заменяет и ждёт готовности; при ошибке сам возвращает прежнюю версию.
+Новые зависимости он не ставит — тогда нужна отдельная выкатка с `npm ci`.
+
+`scripts/sync.sh`, `git-align.sh`, `deploy.sh` — инструменты `serzhb` для его схемы (Mac → сервер), у нас не используются.
 
 Тест без входа (например, из iOS Simulator на Mac): `ssh -N -L 3119:/run/mcc-agents/local.sock dev@SERVER_IP`
 → http://localhost:3119. Сокет `local.sock` доступен только пользователю `dev`.
@@ -54,11 +57,3 @@ ssh dev@SERVER_IP '~/dev/mcc/mcc-agents/scripts/deploy.sh --local'   # собр�
 | логи | `journalctl -u mcc-agentd -u mcc-agents-web` |
 
 Подробно — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), текущее состояние — [docs/STATUS.md](docs/STATUS.md).
-
-Обновление управления чатами/архива/статусов после завершения всех задач панели
-выполняется из обычного SSH: `sudo bash scripts/deploy-chat-management.sh`.
-Установщик проверяет idle, собирает веб отдельно, резервирует runtime и обновляет
-обе службы. После установки перезагрузить вкладку панели.
-
-Для публикации только веб-интерфейса из SSH: `sudo bash scripts/deploy-web.sh`.
-Скрипт собирает отдельно, сохраняет предыдущую сборку и перезапускает веб-сервис.

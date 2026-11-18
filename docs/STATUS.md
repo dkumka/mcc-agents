@@ -370,3 +370,7 @@ Chromium 375/402/1440 для меню, переименования, pin, ста
 
 Проверено: `tsc` (agentd, protocol, web), сборка веба, `chat-management-test`, `permissions-test`, `task-prompt-test`,
 `tg-approvals-test`. Линтер: прежняя ошибка в `lib/dictation.ts` (из upstream), новых нет. Ожидает выкатки и проверки в браузере.
+
+Выкатка сведена в один `scripts/deploy-server.sh` (веб + демон в runtime целиком, резервная копия, проверка `busy`,
+автооткат). `deploy-web.sh`, `deploy-chat-management.sh`, `deploy-permissions.sh` удалены — они копировали отдельные
+файлы и не подходят для изменений, затрагивающих весь демон.
