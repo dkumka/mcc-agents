@@ -7,12 +7,8 @@ export const AGENT_NAME: Record<AgentKind, string> = { claude: 'Claude', codex: 
 export const otherAgent = (a: AgentKind): AgentKind => (a === 'claude' ? 'codex' : 'claude');
 
 const FORMAT: Record<AgentKind, string> = {
-  codex:
-    'формат JSONL Codex: мои реплики — записи `response_item` с `role: "user"`, ответы — с `role: "assistant"`; ' +
-    'записи `developer` — служебные инструкции Codex, вызовы инструментов и их вывод — рабочие шаги, их только учитывай',
-  claude:
-    'формат JSONL Claude Code: строки `type: "user"` и `type: "assistant"`, текст — в `message.content`; ' +
-    'строки `user` с `tool_result` — это вывод инструментов, а не мои сообщения; `tool_use` — рабочие шаги, их только учитывай',
+  codex: 'JSONL Codex: мои реплики — `role: "user"`, ответы — `role: "assistant"`, записи `developer` пропусти',
+  claude: 'JSONL Claude Code: `type: "user"` / `"assistant"`; `user` с `tool_result` — вывод инструментов, не мои слова',
 };
 
 /**
@@ -29,19 +25,16 @@ export async function continueInOtherAgent(chat: ChatSummary) {
   }
   const from = AGENT_NAME[chat.agent];
   const code = info.mode !== 'chat';
-  const draft = [
-    `Продолжим работу, которую я начал в ${from} в чате «${chat.title}». Полная история лежит в файле`,
-    info.path,
-    `(${FORMAT[chat.agent]}).`,
-    code ? `Рабочая папка та же: ${info.cwd}.` : `Файлы той беседы, если понадобятся, — в папке ${info.cwd}.`,
+  const text = [
+    `Продолжим работу из ${from}, чат «${chat.title}». Полная история: ${info.path} (${FORMAT[chat.agent]}).`,
+    code ? `Рабочая папка та же: ${info.cwd}.` : `Файлы той беседы — в ${info.cwd}.`,
     '',
-    'Прочитай историю целиком и:',
-    '1. Кратко перескажи, о чём шла речь: мои цели, исходные данные, к каким решениям мы пришли и что уже сделано.',
-    `2. Отметь, что в ответах ${from} выглядит спорным, ошибочным или недоделанным, — с пояснением.`,
-    code ? '3. Проверь текущее состояние файлов и git: что из обсуждённого действительно сделано.' : '3. Скажи, на чём мы остановились.',
-    '4. Предложи, как продолжить.',
-    '',
-    `Дальше работаем в этом чате, на ${from} больше не опирайся.`,
+    `Прочитай историю и кратко: цели и решения; что в ответах ${from} спорно или не доделано;` +
+      (code ? ' что из этого реально сделано в файлах и git;' : '') + ' на чём остановились и как продолжить.',
+    `Дальше работаем здесь, на ${from} не опирайся.`,
   ].join('\n');
+  // like «Открыть как новую задачу»: the route (and the address bar) carries only an id, the text waits in localStorage
+  const draft = crypto.randomUUID();
+  localStorage.setItem(`draft:task:${draft}`, text);
   store.navigate({ kind: 'new', agent: otherAgent(chat.agent), mode: code ? 'code' : 'chat', cwd: code ? info.cwd : undefined, draft });
 }
