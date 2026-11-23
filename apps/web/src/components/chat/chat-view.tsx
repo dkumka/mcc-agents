@@ -331,7 +331,7 @@ export function ChatView({ chatId }: { chatId: string }) {
           placeholder={busy ? 'Добавить в очередь…' : undefined}
           autoFocus
         />
-        <StatusBar usage={state.usage} limits={limits} agent={s.agent} tasks={state.tasks} />
+        <StatusBar usage={state.usage} limits={limits} agent={s.agent} model={state.settings.model} tasks={state.tasks} />
       </div>
     </div>
   );

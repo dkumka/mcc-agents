@@ -36,6 +36,8 @@ export interface Adapter {
   list(): Promise<ChatSummary[]>;
   load(chat: Chat): Promise<void>;
   prepare(cwd: string, settings: ChatSettings): Promise<string>;
+  /** A browser connected (opened the UI): a chance to refresh stale data, e.g. limits. */
+  clientConnected?(): void;
   /** Copy the dialogue into a new session (up to, not including, the user message `beforeItemId`); returns its native id. */
   fork(chat: Chat, title: string, beforeItemId?: string): Promise<string>;
   send(chat: Chat, message: SendPayload, uuid: string, isNew: boolean): Promise<void>;
@@ -285,6 +287,7 @@ export class Hub implements ChatSink {
 
   addClient(c: Client) {
     this.clients.add(c);
+    for (const a of Object.values(this.adapters)) a.clientConnected?.();
     c.send({ t: 'hello', version: config.version, host: process.env.HOSTNAME ?? 'mcc' });
     c.send({ t: 'chats', chats: this.summaries() });
     c.send({ t: 'limits', limits: store.limits() });

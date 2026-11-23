@@ -378,12 +378,7 @@ export function AppSidebar() {
             <div key={a} className="flex items-center gap-1.5">
               <AgentMark agent={a} className="size-3.5 text-[8px]" />
               <LimitsInline limits={limits} agent={a} />
-              {!limits.find((l) => l.agent === a)?.windows.length &&
-                (a === 'antigravity' ? (
-                  <span className="truncate" title="agy не сообщает остаток лимитов">{limits.find((l) => l.agent === a)?.plan ?? 'Antigravity'} · без счётчика лимитов</span>
-                ) : (
-                  <span>лимиты появятся после первого запроса</span>
-                ))}
+              {!limits.find((l) => l.agent === a)?.windows.length && <span>лимиты появятся после первого запроса</span>}
             </div>
           ))}
         </div>

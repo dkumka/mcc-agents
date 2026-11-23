@@ -9,6 +9,7 @@ import type {
   ChatSettings,
   ChatSummary,
   FileDiff,
+  LimitWindow,
   ModelInfo,
   PermissionModeInfo,
   SendPayload,
@@ -238,6 +239,10 @@ export class AntigravityAdapter implements Adapter {
 
   constructor(hub: Hub) {
     this.hub = hub;
+    // limits at start, if none or older than an hour (no point earlier: the list refresh starts agy anyway)
+    setTimeout(() => {
+      if (this.usageStale()) this.refreshUsage();
+    }, 20_000);
     this.acp.on('notification', (m: string, p: Json) => {
       try {
         if (m === 'session/update') this.onUpdate(String(p.sessionId), p.update ?? {});
@@ -330,7 +335,7 @@ export class AntigravityAdapter implements Adapter {
     const tier = r?._meta?.antigravity?.tier?.name;
     if (tier && tier !== this.tier) {
       this.tier = tier;
-      this.hub.setLimits({ agent: AGENT, plan: tier, windows: [], updatedAt: Date.now() });
+      this.publishLimits();
     }
     this.capsCache = null;
   }
@@ -483,6 +488,8 @@ export class AntigravityAdapter implements Adapter {
     chat.clearApprovals();
     chat.setStatus('idle');
     chat.finished(outcome);
+    // what this turn cost: 5-hour / weekly limits (also after an error — it may be the limit itself)
+    this.refreshUsage();
   }
 
   async send(chat: Chat, message: SendPayload) {
@@ -728,6 +735,94 @@ export class AntigravityAdapter implements Adapter {
   }
 
   // ------------------------------------------------------------ capabilities
+
+  // ------------------------------------------------------------ limits
+
+  /**
+   * Limits come from `agy -p "/usage" --output-format json` — the CLI's own non-interactive answer to /usage: no agent
+   * turn, no quota spent, ~3 s. Asked after every turn, at start and when the UI is opened if older than an hour; never
+   * on a timer. One run at a time; a request during a run repeats it once afterwards.
+   */
+  private usageRun: Promise<void> | null = null;
+  private usageAgain = false;
+
+  private limitsNow() {
+    return store.limits().find((l) => l.agent === AGENT);
+  }
+
+  private usageStale() {
+    const l = this.limitsNow();
+    return !l?.windows.length || Date.now() - l.updatedAt > 60 * 60_000;
+  }
+
+  /** Store plan + windows (absent windows: keep the last ones and their time). */
+  private publishLimits(windows?: LimitWindow[]) {
+    const prev = this.limitsNow();
+    this.hub.setLimits({
+      agent: AGENT,
+      plan: this.tier ?? prev?.plan,
+      windows: windows ?? prev?.windows ?? [],
+      updatedAt: windows ? Date.now() : (prev?.updatedAt ?? 0),
+    });
+  }
+
+  refreshUsage() {
+    if (this.usageRun) {
+      this.usageAgain = true;
+      return;
+    }
+    this.usageRun = this.fetchUsage()
+      .catch((e) => log.warn('usage', (e as Error).message))
+      .finally(() => {
+        this.usageRun = null;
+        if (this.usageAgain) {
+          this.usageAgain = false;
+          setTimeout(() => this.refreshUsage(), 3000);
+        }
+      });
+  }
+
+  clientConnected() {
+    if (!this.usageRun && this.usageStale()) this.refreshUsage();
+  }
+
+  private async fetchUsage() {
+    if (!this.models.length) await this.listModels().catch(() => {});
+    const out = await new Promise<string>((resolve, reject) =>
+      execFile(config.agyBin, ['-p', '/usage', '--output-format', 'json'], { timeout: 60_000, cwd: config.home, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) =>
+        err ? reject(err) : resolve(String(stdout)),
+      ),
+    );
+    const j: Json = JSON.parse(out);
+    const groups = (j?.command?.data?.groups ?? []) as Json[];
+    if (j?.status !== 'SUCCESS' || !groups.length) throw new Error(`agy /usage: ${String(j?.error ?? j?.response ?? 'нет данных').slice(0, 200)}`);
+    const windows: LimitWindow[] = [];
+    for (const g of groups) {
+      const name = String(g.name ?? '');
+      const groupId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const group = name.replace(/ models$/i, '').replace(/^Claude and GPT$/i, 'Claude и GPT').replace(/^Gemini 4 /, '');
+      const listed = String(g.description ?? '').match(/Models within this group:\s*(.+)$/);
+      const labels = listed ? listed[1].replace(/\.$/, '').split(/,\s*/) : [name];
+      const models = this.models.filter((m) => labels.includes(m.label)).map((m) => m.id);
+      for (const b of (g.buckets ?? []) as Json[]) {
+        const left = Number(b.remaining_fraction);
+        if (!Number.isFinite(left)) continue;
+        const reset = Date.parse(b.reset_time ?? '');
+        windows.push({
+          id: String(b.id ?? `${groupId}-${b.window}`),
+          label: b.window === '5h' ? '5 часов' : b.window === 'weekly' ? 'Неделя' : String(b.name ?? b.window),
+          usedPercent: Math.max(0, Math.min(100, Math.round((1 - left) * 100))),
+          resetsAt: Number.isFinite(reset) ? Math.round(reset / 1000) : undefined,
+          groupId,
+          group,
+          models,
+        });
+      }
+    }
+    if (!windows.length) throw new Error('agy /usage: нет окон');
+    this.publishLimits(windows);
+    log.info(`usage: ${windows.map((w) => `${w.group} ${w.label} ${w.usedPercent}%`).join(', ')}`);
+  }
 
   /** `agy models` — the model list before any session was opened in this process. */
   private listModels(): Promise<void> {

@@ -212,6 +212,13 @@ export interface LimitWindow {
   /** unix seconds */
   resetsAt?: number;
   status?: string;
+  /**
+   * Antigravity counts limits per group of models (Gemini / Claude и GPT / Argon), each with its own 5-hour and weekly
+   * window: the group's id and name, and the base model ids in it (to show the group of the chat's model).
+   */
+  groupId?: string;
+  group?: string;
+  models?: string[];
 }
 
 export interface AgentLimits {
