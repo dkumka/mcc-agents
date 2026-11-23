@@ -3,6 +3,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, Loader2Icon } from 'lucide-react';
 import type { ChatItem, ChatState, ToolItem } from '@mcc-agents/protocol';
+import { canBranch } from '@/lib/format';
 import { FileBase, Markdown } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -178,7 +179,8 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
 
   const firstUserId = useMemo(() => state.items.find((i) => i.kind === 'user')?.id ?? null, [state.items]);
   const anyBusy = busy || state.summary.status === 'waiting';
-  const actions = useMemo(() => ({ chatId, firstUserId, busy: anyBusy }), [chatId, firstUserId, anyBusy]);
+  // Antigravity (ACP) has no fork / rewind
+  const actions = useMemo(() => ({ chatId, firstUserId, busy: anyBusy, branching: canBranch(chatId) }), [chatId, firstUserId, anyBusy]);
 
   const last = top[top.length - 1];
   const streamingNow = last && ((last.kind === 'assistant' && last.streaming) || (last.kind === 'thinking' && last.streaming));

@@ -23,7 +23,7 @@ import {
   BellRingIcon,
   BellIcon,
 } from 'lucide-react';
-import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/protocol';
+import type { AgentCapabilities, AgentKind, ChatState, SendPayload } from '@mcc-agents/protocol';
 import { AgentMark } from '@/components/agent-badge';
 import { copyText } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { capsCached } from '@/lib/api';
 import { setArchived } from '@/lib/archive';
-import { baseName, matchModel, shortPath, terminalCommand } from '@/lib/format';
+import { baseName, canBranch, matchModel, shortPath, terminalCommand } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
 import { cn } from '@/lib/utils';
@@ -44,7 +44,7 @@ import { MessageList } from './message-list';
 import { StatusBar } from './status-bar';
 import { TodoBar } from './todo-bar';
 
-export function useCaps(agent: 'claude' | 'codex', cwd: string | undefined) {
+export function useCaps(agent: AgentKind, cwd: string | undefined) {
   const [caps, setCaps] = useState<AgentCapabilities | null>(null);
   useEffect(() => {
     if (!cwd) return;
@@ -192,13 +192,15 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             <DropdownMenuItem className="py-2.5" onClick={() => setRename(true)}>
               <PencilIcon /> Переименовать
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="py-2.5"
-              disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'}
-              onClick={() => ui.set({ fork: { chatId: s.id } })}
-            >
-              <GitBranchIcon /> Форк чата…
-            </DropdownMenuItem>
+            {canBranch(s.id) && (
+              <DropdownMenuItem
+                className="py-2.5"
+                disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'}
+                onClick={() => ui.set({ fork: { chatId: s.id } })}
+              >
+                <GitBranchIcon /> Форк чата…
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="py-2.5"
               onClick={() => {

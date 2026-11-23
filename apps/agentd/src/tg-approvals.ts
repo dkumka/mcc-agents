@@ -9,7 +9,7 @@ import { store } from './store.ts';
 import { escapeHtml as h, TelegramBridge, type TgButton } from './telegram.ts';
 
 const log = logger('tg-approvals');
-const AGENT: Record<string, string> = { claude: 'Claude', codex: 'Codex' };
+const AGENT: Record<string, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
 export interface DecisionSink {
   peek(chatId: string): Chat | undefined;

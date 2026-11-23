@@ -89,13 +89,13 @@ function Thumb({ src, name, onOpen }: { src?: string; name: string; onOpen?: () 
 }
 
 /** What a user message can do: copy, branch from it, roll the dialogue back to it (set by MessageList). */
-export const MessageActions = createContext<{ chatId: string; firstUserId: string | null; busy: boolean } | null>(null);
+export const MessageActions = createContext<{ chatId: string; firstUserId: string | null; busy: boolean; branching: boolean } | null>(null);
 
 function UserActions({ item }: { item: UserItem }) {
   const ctx = useContext(MessageActions);
   if (!ctx) return null;
   // before the very first message there is no dialogue to keep
-  const canBranch = item.id !== ctx.firstUserId;
+  const canBranch = ctx.branching && item.id !== ctx.firstUserId;
   const why = ctx.busy ? 'Дождитесь конца ответа' : undefined;
   const btn =
     'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40';

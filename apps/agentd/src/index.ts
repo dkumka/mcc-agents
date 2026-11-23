@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { AntigravityAdapter } from './antigravity/index.ts';
 import { ClaudeAdapter } from './claude/index.ts';
 import { CodexAdapter } from './codex/index.ts';
 import { Hub } from './hub.ts';
@@ -22,6 +23,8 @@ const claude = new ClaudeAdapter(hub);
 const codex = new CodexAdapter(hub);
 hub.register(claude);
 hub.register(codex);
+// agy acp starts on the first request (the chat list refresh)
+hub.register(new AntigravityAdapter(hub));
 codex.start();
 
 startServer(hub);

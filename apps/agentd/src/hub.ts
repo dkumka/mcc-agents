@@ -55,7 +55,7 @@ export interface Client {
   visible: string | null;
 }
 
-const AGENT_LABEL: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' };
+const AGENT_LABEL: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
 export class Hub implements ChatSink {
   adapters = {} as Record<AgentKind, Adapter>;
@@ -79,12 +79,14 @@ export class Hub implements ChatSink {
 
   /** Start the Telegram bridge (reads ~/secrets) and tidy messages left from a previous run. */
   startTelegram() {
+    if (!config.telegram) return;
     this.tg.reload();
     this.tga.markStale().catch(() => {});
   }
 
   /** Called periodically: pick up a token added with secret-set without a restart. */
   tick() {
+    if (!config.telegram) return;
     const before = this.tg.ready;
     this.tg.maybeReload();
     if (before !== this.tg.ready) this.broadcast({ t: 'prefs', prefs: this.prefsState() });
@@ -522,7 +524,7 @@ export class Hub implements ChatSink {
     if (wasUnread) this.summaryChanged(chat);
   }
 
-  /** Free memory of chats nobody looks at; let idle Codex threads go. */
+  /** Free memory of chats nobody looks at; let idle Codex threads / Antigravity sessions go. */
   sweep() {
     const now = Date.now();
     for (const chat of this.chats.values()) {
@@ -531,7 +533,7 @@ export class Hub implements ChatSink {
       for (const c of this.clients) if (c.subs.has(chat.id)) watched = true;
       if (watched || now - chat.lastActivity < 10 * 60_000) continue;
       const a = this.adapters[chat.agent];
-      if (chat.agent === 'codex' && a.isLive(chat) && chat.summary.status === 'idle') {
+      if (chat.agent !== 'claude' && a.isLive(chat) && chat.summary.status === 'idle') {
         a.release(chat).catch(() => {});
         continue;
       }

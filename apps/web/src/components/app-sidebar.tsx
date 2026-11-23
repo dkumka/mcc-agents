@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronRightIcon, CodeXmlIcon, EllipsisIcon, FolderPlusIcon, GitBranchIcon, PencilIcon, PinOffIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
-import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
+import { AGENTS, type ChatMode, type ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
 import { NewProjectDialog } from '@/components/new-project-dialog';
@@ -248,7 +248,7 @@ export function AppSidebar() {
           <div className="flex size-7 items-center justify-center rounded-md bg-foreground font-mono text-xs font-bold text-background">&gt;_</div>
           <div className="min-w-0 flex-1 leading-tight">
             <div className="text-sm font-semibold">mcc agents</div>
-            <div className="truncate text-[11px] text-muted-foreground">Claude Code · Codex</div>
+            <div className="truncate text-[11px] text-muted-foreground">Claude Code · Codex · Antigravity</div>
           </div>
           {!connected && everConnected && <WifiOffIcon className="size-4 text-destructive" aria-label="нет связи" />}
         </div>
@@ -373,11 +373,16 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="pb-safe gap-1 border-t">
         <div className="space-y-1 px-1 text-[11px] text-muted-foreground">
-          {(['claude', 'codex'] as const).map((a) => (
+          {AGENTS.map((a) => (
             <div key={a} className="flex items-center gap-1.5">
               <AgentMark agent={a} className="size-3.5 text-[8px]" />
               <LimitsInline limits={limits} agent={a} />
-              {!limits.find((l) => l.agent === a)?.windows.length && <span>лимиты появятся после первого запроса</span>}
+              {!limits.find((l) => l.agent === a)?.windows.length &&
+                (a === 'antigravity' ? (
+                  <span>{limits.find((l) => l.agent === a)?.plan ?? 'Antigravity'} · остаток лимитов CLI не сообщает</span>
+                ) : (
+                  <span>лимиты появятся после первого запроса</span>
+                ))}
             </div>
           ))}
         </div>

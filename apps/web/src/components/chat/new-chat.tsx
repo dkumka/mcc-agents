@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, GitBranchIcon } from 'lucide-react';
 import { NewProjectDialog } from '@/components/new-project-dialog';
-import type { AgentCapabilities, AgentKind, ChatMode, ChatSettings, ProjectInfo, SendPayload } from '@mcc-agents/protocol';
+import { AGENTS, type AgentCapabilities, type AgentKind, type ChatMode, type ChatSettings, type ProjectInfo, type SendPayload } from '@mcc-agents/protocol';
 import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -139,21 +139,21 @@ export function NewChat({ initialCwd, initialAgent, mode = 'code' }: { initialCw
 function AgentCards({ agent, onChange, compact }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean }) {
   const limits = useStore((s) => s.limits);
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {(['claude', 'codex'] as AgentKind[]).map((a) => (
+    <div className="grid grid-cols-3 gap-2">
+      {AGENTS.map((a) => (
         <button
           key={a}
           type="button"
           onClick={() => onChange(a)}
           className={cn(
-            'flex items-center gap-2.5 rounded-xl border px-3 text-left transition-colors',
+            'flex min-w-0 items-center gap-2 rounded-xl border px-2.5 text-left transition-colors sm:gap-2.5 sm:px-3',
             compact ? 'h-12' : 'h-14',
             agent === a ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
           )}
         >
           <AgentMark agent={a} className="size-6 text-xs" />
           <span className="min-w-0">
-            <span className="block text-sm font-medium">{AGENT_NAME[a]}</span>
+            <span className="block truncate text-sm font-medium">{AGENT_NAME[a]}</span>
             <span className="block truncate text-[11px] text-muted-foreground">
               <LimitsInline limits={limits} agent={a} />
             </span>
@@ -318,7 +318,7 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
         <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-5 px-4 py-8">
           <div className="space-y-1 text-center">
             <h2 className="text-xl font-semibold tracking-tight">С чего начнём?</h2>
-            <p className="text-sm text-muted-foreground">Сессии те же, что в терминале: их видят `claude --resume` и `codex resume`.</p>
+            <p className="text-sm text-muted-foreground">Сессии те же, что в терминале: их видят `claude --resume`, `codex resume` и `agy --conversation`.</p>
           </div>
           <div className="space-y-2">
             <AgentCards agent={agent} onChange={setAgent} />

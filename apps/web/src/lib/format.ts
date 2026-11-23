@@ -1,4 +1,11 @@
+import type { AgentKind } from '@mcc-agents/protocol';
+
 const HOME = '/home/serzhb';
+
+/** Fork / rewind from the web: Claude and Codex; Antigravity's ACP has neither. */
+export function canBranch(chatId: string): boolean {
+  return !chatId.startsWith('antigravity:');
+}
 
 export function shortPath(p: string, cwd?: string): string {
   if (!p) return '';
@@ -61,7 +68,8 @@ export function duration(ms?: number | null): string {
   return `${Math.floor(s / 60)} мин ${Math.round(s % 60)} с`;
 }
 
-export function terminalCommand(agent: 'claude' | 'codex', nativeId: string, cwd: string): string {
+export function terminalCommand(agent: AgentKind, nativeId: string, cwd: string): string {
+  if (agent === 'antigravity') return `cd ${cwd} && agy --conversation ${nativeId}`;
   return agent === 'claude' ? `cd ${cwd} && claude --resume ${nativeId}` : `cd ${cwd} && codex resume ${nativeId}`;
 }
 

@@ -1,11 +1,13 @@
 /**
  * Shared types for agentd ⇄ web. Everything the UI renders is a normalized ChatItem,
- * independent of which CLI (claude / codex) produced it.
+ * independent of which CLI (claude / codex / agy) produced it.
  */
 
-export type AgentKind = 'claude' | 'codex';
+export type AgentKind = 'claude' | 'codex' | 'antigravity';
 
-/** `${agent}:${nativeId}` — nativeId is the Claude session UUID or the Codex thread id. */
+export const AGENTS: AgentKind[] = ['claude', 'codex', 'antigravity'];
+
+/** `${agent}:${nativeId}` — nativeId is the Claude session UUID, the Codex thread id or the Antigravity conversation id. */
 export type ChatId = string;
 
 export type ChatStatus = 'idle' | 'starting' | 'running' | 'waiting' | 'error';

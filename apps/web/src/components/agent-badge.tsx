@@ -1,20 +1,26 @@
 import type { AgentKind, ChatStatus } from '@mcc-agents/protocol';
 import { cn } from '@/lib/utils';
 
-export const AGENT_NAME: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' };
+export const AGENT_NAME: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
-/** Small square mark: orange "C" for Claude, slate "X" for Codex. */
+const MARK: Record<AgentKind, { letter: string; cls: string }> = {
+  claude: { letter: 'C', cls: 'bg-claude' },
+  codex: { letter: 'X', cls: 'bg-codex text-background' },
+  antigravity: { letter: 'A', cls: 'bg-antigravity' },
+};
+
+/** Small square mark: orange "C" for Claude, slate "X" for Codex, blue "A" for Antigravity. */
 export function AgentMark({ agent, className }: { agent: AgentKind; className?: string }) {
   return (
     <span
       aria-label={AGENT_NAME[agent]}
       className={cn(
         'inline-flex size-4 shrink-0 items-center justify-center rounded-[4px] font-mono text-[10px] font-bold leading-none text-white',
-        agent === 'claude' ? 'bg-claude' : 'bg-codex text-background',
+        MARK[agent].cls,
         className,
       )}
     >
-      {agent === 'claude' ? 'C' : 'X'}
+      {MARK[agent].letter}
     </span>
   );
 }
