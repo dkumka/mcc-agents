@@ -561,7 +561,7 @@ export class Hub implements ChatSink {
     if (wasUnread) this.summaryChanged(chat);
   }
 
-  /** Free memory of chats nobody looks at; let idle Codex threads / Antigravity sessions go. */
+  /** Free memory of chats nobody looks at; let idle Codex threads go. */
   sweep() {
     const now = Date.now();
     for (const chat of this.chats.values()) {
@@ -570,7 +570,9 @@ export class Hub implements ChatSink {
       for (const c of this.clients) if (c.subs.has(chat.id)) watched = true;
       if (watched || now - chat.lastActivity < 10 * 60_000) continue;
       const a = this.adapters[chat.agent];
-      if (chat.agent !== 'claude' && a.isLive(chat) && chat.summary.status === 'idle') {
+      // Codex only: closing an Antigravity session (session/close) also kills its background tasks (dev servers, long
+      // commands) — seen in agy's log 2026-11-23 — so its sessions stay open
+      if (chat.agent === 'codex' && a.isLive(chat) && chat.summary.status === 'idle') {
         a.release(chat).catch(() => {});
         continue;
       }

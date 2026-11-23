@@ -202,6 +202,8 @@ interface Sess {
   denied: Set<string>;
   /** last time content arrived between turns (the agent woke up by itself). */
   wokeAt?: number;
+  /** closes the streamed text of such a wake-up once the session is quiet (no prompt will end it). */
+  quietTimer?: NodeJS.Timeout;
   /** what the session runs now (to skip redundant set_model / set_mode). */
   modelId?: string;
   mode?: string;
@@ -374,6 +376,10 @@ export class AntigravityAdapter implements Adapter {
     let r: Json;
     try {
       r = await this.acp.request('session/load', { sessionId: sid, cwd: chat.cwd || config.home, mcpServers: [] }, 180_000);
+      // the replay may go on after the answer (seen 2026-11-23: the last answer came ~0.3 s later, became a «live» item
+      // stuck in «пишет…» and lifted the chat as unread) — stay in replay until the session has been quiet for a moment
+      const until = Date.now() + 5000;
+      while (Date.now() - st.lastEventAt < 600 && Date.now() < until) await new Promise((res) => setTimeout(res, 100));
     } finally {
       this.closeText(chat, st);
       st.replay = false;
@@ -618,6 +624,12 @@ export class AntigravityAdapter implements Adapter {
     if (!st.replay && !st.inflight && /^(agent_message_chunk|tool_call)$/.test(String(u.sessionUpdate)) && Date.now() - (st.wokeAt ?? 0) > 5000) {
       st.wokeAt = Date.now();
       chat.setSummary({ updatedAt: Date.now() });
+    }
+    if (!st.replay && !st.inflight) {
+      clearTimeout(st.quietTimer);
+      st.quietTimer = setTimeout(() => {
+        if (!st.inflight) this.closeText(chat, st);
+      }, 3000);
     }
     switch (u.sessionUpdate) {
       case 'user_message_chunk':
