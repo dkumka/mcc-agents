@@ -6,6 +6,7 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { DebugOverlay } from '@/components/debug-overlay';
 import { FileViewer } from '@/components/file-viewer';
 import { ForkDialog } from '@/components/chat/fork-dialog';
+import { HandoffDialog } from '@/components/chat/handoff-dialog';
 import { ChatView } from '@/components/chat/chat-view';
 import { NewChat } from '@/components/chat/new-chat';
 import { SidePanel } from '@/components/panel/side-panel';
@@ -70,6 +71,7 @@ export function App() {
       </SidebarInset>
       <FileViewer />
       <ForkDialog />
+      <HandoffDialog />
       <DebugOverlay />
     </SidebarProvider>
   );

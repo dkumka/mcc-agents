@@ -107,7 +107,7 @@ function ProjectPicker({ value, onChange, projects, onNew }: { value: string; on
   );
 }
 
-function lastSettings(agent: AgentKind): ChatSettings {
+export function lastSettings(agent: AgentKind): ChatSettings {
   try {
     return JSON.parse(localStorage.getItem(`settings:${agent}`) ?? '{}');
   } catch {
@@ -116,7 +116,7 @@ function lastSettings(agent: AgentKind): ChatSettings {
 }
 
 /** The «decide yourself, ask only about risky things» mode: Claude `auto`, Codex `on-request`. */
-function autoMode(caps: AgentCapabilities): string | undefined {
+export function autoMode(caps: AgentCapabilities): string | undefined {
   const has = (m: string) => caps.permissionModes.some((x) => x.id === m);
   return has('auto') ? 'auto' : has('on-request') ? 'on-request' : caps.defaults.permissionMode;
 }
@@ -136,11 +136,11 @@ export function NewChat({ initialCwd, initialAgent, mode = 'code' }: { initialCw
   return mode === 'chat' ? <NewConversation key="chat" initialAgent={initialAgent} /> : <NewProjectChat key="code" initialCwd={initialCwd} initialAgent={initialAgent} />;
 }
 
-function AgentCards({ agent, onChange, compact }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean }) {
+export function AgentCards({ agent, onChange, compact, agents = AGENTS }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean; agents?: AgentKind[] }) {
   const limits = useStore((s) => s.limits);
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {AGENTS.map((a) => (
+    <div className={cn('grid gap-2', agents.length === 2 ? 'grid-cols-2' : 'grid-cols-3')}>
+      {agents.map((a) => (
         <button
           key={a}
           type="button"

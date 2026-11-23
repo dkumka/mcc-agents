@@ -38,6 +38,10 @@ export interface ChatSummary {
   archived?: boolean;
   /** «Сообщить в Telegram, когда закончит» is on: one message when the current/next turn ends, then it switches off. */
   notifyDone?: boolean;
+  /** «Продолжить в другом агенте»: this chat continues that one (its history went in as a file). */
+  handoffFrom?: ChatId;
+  /** …and the other way round: the latest chat this one was continued in. */
+  handoffTo?: ChatId;
 }
 
 export type ChatMode = 'chat' | 'code';
@@ -387,6 +391,11 @@ export type ClientMessage =
    * Answered with `created` (reqId).
    */
   | { t: 'fork'; reqId: string; chatId: ChatId; title: string; beforeItemId?: string; rewind?: boolean }
+  /**
+   * Continue the dialogue in another agent: a new chat (same folder) whose first message carries the whole history as a
+   * Markdown file; the new agent sums it up and waits. Answered with `created` (reqId).
+   */
+  | { t: 'handoff'; reqId: string; chatId: ChatId; agent: AgentKind; settings: ChatSettings; note?: string }
   /** Undo a rollback: show the original again, hide this branch. */
   | { t: 'unrewind'; chatId: ChatId }
   | { t: 'send'; chatId: ChatId; message: SendPayload }

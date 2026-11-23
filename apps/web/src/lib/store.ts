@@ -380,6 +380,25 @@ class Store {
     });
   }
 
+  /** Continue `chatId` in another agent: a new chat whose first message carries the history as a file. */
+  handoff(chatId: string, agent: AgentKind, settings: ChatSettings, note?: string): Promise<string> {
+    const reqId = Math.random().toString(36).slice(2);
+    return new Promise((resolve, reject) => {
+      if (!this.send({ t: 'handoff', reqId, chatId, agent, settings, note })) return reject(new Error('Нет соединения с сервером'));
+      const timer = setTimeout(() => {
+        this.waitingCreate.delete(reqId);
+        reject(new Error('Сервер не ответил'));
+      }, 120_000);
+      this.waitingCreate.set(reqId, (id, err) => {
+        clearTimeout(timer);
+        if (id) {
+          this.subs.add(id);
+          resolve(id);
+        } else reject(new Error(err ?? 'Не удалось продолжить в другом агенте'));
+      });
+    });
+  }
+
   unrewind(chatId: string) {
     return this.send({ t: 'unrewind', chatId });
   }

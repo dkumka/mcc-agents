@@ -22,9 +22,10 @@ import {
   ArchiveRestoreIcon,
   BellRingIcon,
   BellIcon,
+  ArrowRightLeftIcon,
 } from 'lucide-react';
 import type { AgentCapabilities, AgentKind, ChatState, SendPayload } from '@mcc-agents/protocol';
-import { AgentMark } from '@/components/agent-badge';
+import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { copyText } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -101,6 +102,26 @@ export function RenameDialog({ open, onOpenChange, chatId, title }: { open: bool
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** «Продолжение чата … из Claude» / «Продолжен в Codex …» — a link to the other end of a handoff. */
+function HandoffBanner({ from, to }: { from?: string; to?: string }) {
+  const other = useStore((st) => st.chats[(from ?? to)!]);
+  if (!other) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => store.navigate({ kind: 'chat', chatId: other.id })}
+      className="flex w-full shrink-0 items-center gap-2 border-b bg-muted/50 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground md:px-4"
+    >
+      <ArrowRightLeftIcon className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
+        {from ? `Продолжение чата из ${AGENT_NAME[other.agent]}: «${other.title}»` : `Продолжен в ${AGENT_NAME[other.agent]}: «${other.title}»`}
+      </span>
+      <AgentMark agent={other.agent} className="size-3.5 text-[8px]" />
+      <span className="shrink-0">Открыть →</span>
+    </button>
   );
 }
 
@@ -192,6 +213,9 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             <DropdownMenuItem className="py-2.5" onClick={() => setRename(true)}>
               <PencilIcon /> Переименовать
             </DropdownMenuItem>
+            <DropdownMenuItem className="py-2.5" disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'} onClick={() => ui.set({ handoff: { chatId: s.id } })}>
+              <ArrowRightLeftIcon /> Продолжить в другом агенте…
+            </DropdownMenuItem>
             {canBranch(s.id) && (
               <DropdownMenuItem
                 className="py-2.5"
@@ -274,6 +298,8 @@ export function ChatView({ chatId }: { chatId: string }) {
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <Header state={state} caps={caps} />
       {s.rewoundFrom && <RewindBanner chatId={chatId} from={s.rewoundFrom} />}
+      {s.handoffFrom && <HandoffBanner from={s.handoffFrom} />}
+      {s.handoffTo && <HandoffBanner to={s.handoffTo} />}
       {s.archived && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground md:px-4">
           <ArchiveIcon className="size-3.5 shrink-0" />

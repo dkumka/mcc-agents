@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { ArchiveIcon, ArchiveRestoreIcon, ChevronRightIcon, CodeXmlIcon, EllipsisIcon, FolderPlusIcon, GitBranchIcon, PencilIcon, PinOffIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { ArchiveIcon, ArchiveRestoreIcon, ArrowRightLeftIcon, ChevronRightIcon, CodeXmlIcon, EllipsisIcon, FolderPlusIcon, GitBranchIcon, PencilIcon, PinOffIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
 import { AGENTS, type ChatMode, type ChatSummary } from '@mcc-agents/protocol';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
@@ -89,6 +89,7 @@ function ChatRow({
         <AgentMark agent={c.agent} className="opacity-90" />
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold', c.archived && 'text-muted-foreground')}>{c.title}</span>
         {c.forkOf && <GitBranchIcon className="size-3 shrink-0 text-muted-foreground" aria-label="ветка" />}
+        {c.handoffFrom && <ArrowRightLeftIcon className="size-3 shrink-0 text-muted-foreground" aria-label="продолжение из другого агента" />}
         {c.archived && mark && <ArchiveIcon className="size-3 shrink-0 text-muted-foreground" aria-label="в архиве" />}
         <StatusDot status={c.status} unread={c.unread} />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>

@@ -21,7 +21,8 @@ import { Chat, type ChatSink } from './chat.ts';
 import { CHAT_ROOT, isChatDir, newChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
-import { store } from './store.ts';
+import { handoffFile, handoffMessage } from './handoff.ts';
+import { store, type ChatMeta } from './store.ts';
 import { TelegramBridge } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
 import { textWithFiles } from './uploads.ts';
@@ -118,6 +119,8 @@ export class Hub implements ChatSink {
     if (meta.hidden) out.hidden = true;
     if (meta.archived) out.archived = true;
     if (meta.notifyDone) out.notifyDone = true;
+    if (meta.handoffFrom) out.handoffFrom = meta.handoffFrom;
+    if (meta.handoffTo) out.handoffTo = meta.handoffTo;
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
   }
@@ -330,6 +333,42 @@ export class Hub implements ChatSink {
     };
   }
 
+  /** A new chat: prepare the CLI session, show it, send the first message. Returns the chat id. */
+  private async startChat(
+    client: Client,
+    o: { reqId: string; agent: AgentKind; cwd: string; settings: ChatSettings; message: SendPayload; title?: string; meta?: Partial<ChatMeta> },
+  ): Promise<string> {
+    const adapter = this.adapters[o.agent];
+    const settings: ChatSettings = { ...o.settings };
+    const nativeId = await adapter.prepare(o.cwd, settings);
+    const id = `${o.agent}:${nativeId}`;
+    const now = Date.now();
+    const firstLine = o.message.text.trim().split('\n')[0] || 'Новый чат';
+    const chat = new Chat(
+      { id, agent: o.agent, nativeId, cwd: o.cwd, title: (o.title ?? firstLine).slice(0, 100), createdAt: now, updatedAt: now, status: 'starting', origin: 'web', model: settings.model },
+      this,
+    );
+    chat.loaded = true;
+    chat.state.settings = settings;
+    this.chats.set(id, chat);
+    store.setMeta(id, { web: true, settings, lastSeen: now, ...(o.title ? { title: o.title } : {}), ...o.meta });
+    store.setLastSettings(o.agent, settings);
+    client.subs.add(id);
+    client.visible = id;
+    this.summaryChanged(chat);
+    client.send({ t: 'created', reqId: o.reqId, chatId: id });
+    client.send({ t: 'snapshot', chatId: id, state: { ...chat.snapshot(), summary: this.decorate(chat.summary) } });
+    const uuid = randomUUID();
+    chat.upsert(this.userItem(uuid, o.message));
+    try {
+      await adapter.send(chat, { ...o.message, text: textWithFiles(o.message), files: undefined }, uuid, true);
+    } catch (e) {
+      chat.notice('error', (e as Error).message);
+      chat.setStatus('error');
+    }
+    return id;
+  }
+
   async handle(client: Client, msg: ClientMessage) {
     switch (msg.t) {
       case 'ping':
@@ -361,33 +400,31 @@ export class Hub implements ChatSink {
         if (!adapter) throw new Error('неизвестный агент');
         if (msg.mode === 'chat') msg.cwd = newChatDir();
         else if (!msg.cwd || !fs.existsSync(msg.cwd)) throw new Error(`папка не найдена: ${msg.cwd}`);
-        const settings: ChatSettings = { ...msg.settings };
-        const nativeId = await adapter.prepare(msg.cwd, settings);
-        const id = `${msg.agent}:${nativeId}`;
-        const now = Date.now();
-        const firstLine = msg.message.text.trim().split('\n')[0] || 'Новый чат';
-        const chat = new Chat(
-          { id, agent: msg.agent, nativeId, cwd: msg.cwd, title: firstLine.slice(0, 100), createdAt: now, updatedAt: now, status: 'starting', origin: 'web', model: settings.model },
-          this,
-        );
-        chat.loaded = true;
-        chat.state.settings = settings;
-        this.chats.set(id, chat);
-        store.setMeta(id, { web: true, settings, lastSeen: now });
-        store.setLastSettings(msg.agent, settings);
-        client.subs.add(id);
-        client.visible = id;
-        this.summaryChanged(chat);
-        client.send({ t: 'created', reqId: msg.reqId, chatId: id });
-        client.send({ t: 'snapshot', chatId: id, state: { ...chat.snapshot(), summary: this.decorate(chat.summary) } });
-        const uuid = randomUUID();
-        chat.upsert(this.userItem(uuid, msg.message));
-        try {
-          await adapter.send(chat, { ...msg.message, text: textWithFiles(msg.message), files: undefined }, uuid, true);
-        } catch (e) {
-          chat.notice('error', (e as Error).message);
-          chat.setStatus('error');
-        }
+        await this.startChat(client, { reqId: msg.reqId, agent: msg.agent, cwd: msg.cwd, settings: msg.settings, message: msg.message });
+        return;
+      }
+      case 'handoff': {
+        const src = this.need(msg.chatId);
+        if (!this.adapters[msg.agent]) throw new Error('неизвестный агент');
+        if (src.summary.status === 'running' || src.summary.status === 'starting' || src.summary.status === 'waiting')
+          throw new Error('Агент ещё работает — дождитесь конца ответа или остановите его');
+        if (!src.cwd || !fs.existsSync(src.cwd)) throw new Error(`папка чата не найдена: ${src.cwd}`);
+        // the history comes from disk (Claude .jsonl / Codex turns / agy session/load): the old agent's limits are not spent
+        await this.ensureLoaded(src);
+        const title = this.decorate(src.summary).title;
+        const file = await handoffFile(src, title);
+        log.info(`handoff ${src.id} → ${msg.agent} (${src.state.items.length} items, ${file.size} B)`);
+        const id = await this.startChat(client, {
+          reqId: msg.reqId,
+          agent: msg.agent,
+          cwd: src.cwd, // a conversation (~/chat/…) goes on in its own folder too
+          settings: msg.settings,
+          message: { text: handoffMessage(src.agent, title, src.cwd, msg.note), files: [file] },
+          title,
+          meta: { handoffFrom: src.id },
+        });
+        store.setMeta(src.id, { handoffTo: id });
+        this.summaryChanged(src);
         return;
       }
       case 'fork': {
