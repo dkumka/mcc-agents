@@ -12,7 +12,6 @@ import { serveRaw } from './raw.ts';
 import { handleUpload, uploadsStats } from './uploads.ts';
 import { handleVoicePost, listVoice } from './voice.ts';
 import { handleCreateProject } from './projects.ts';
-import { sessionFileOf } from './handoff.ts';
 
 const log = logger('server');
 let clientSeq = 0;
@@ -33,13 +32,6 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
         return json(res, 200, { ok: true, version: config.version, ...hub.status() });
       case '/api/projects':
         return json(res, 200, hub.projects());
-      case '/api/session-file': {
-        const chat = hub.summaries().find((c) => c.id === q.get('chatId'));
-        if (!chat) throw new HttpError(404, 'чат не найден');
-        const file = sessionFileOf(chat);
-        if (!file) throw new HttpError(404, 'файл истории не найден');
-        return json(res, 200, { agent: chat.agent, path: file, cwd: chat.cwd, mode: chat.mode ?? 'code', title: chat.title });
-      }
       case '/api/recent': {
         // last visible chats for the MCC home page (mcc-status reads it through local.sock)
         const limit = Math.min(20, Math.max(1, Number(q.get('limit')) || 5));

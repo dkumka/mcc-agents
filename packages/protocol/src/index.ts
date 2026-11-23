@@ -1,11 +1,13 @@
 /**
  * Shared types for agentd ⇄ web. Everything the UI renders is a normalized ChatItem,
- * independent of which CLI (claude / codex) produced it.
+ * independent of which CLI (claude / codex / agy) produced it.
  */
 
-export type AgentKind = 'claude' | 'codex';
+export type AgentKind = 'claude' | 'codex' | 'antigravity';
 
-/** `${agent}:${nativeId}` — nativeId is the Claude session UUID or the Codex thread id. */
+export const AGENTS: AgentKind[] = ['claude', 'codex', 'antigravity'];
+
+/** `${agent}:${nativeId}` — nativeId is the Claude session UUID, the Codex thread id or the Antigravity conversation id. */
 export type ChatId = string;
 
 export type TaskStage = 'in-progress' | 'done';
@@ -42,6 +44,10 @@ export interface ChatSummary {
   archived?: boolean;
   /** «Сообщить в Telegram, когда закончит» is on: one message when the current/next turn ends, then it switches off. */
   notifyDone?: boolean;
+  /** «Продолжить в другом агенте»: this chat continues that one (its history went in as a file). */
+  handoffFrom?: ChatId;
+  /** …and the other way round: the latest chat this one was continued in. */
+  handoffTo?: ChatId;
 }
 
 export type ChatMode = 'chat' | 'code';
@@ -212,6 +218,13 @@ export interface LimitWindow {
   /** unix seconds */
   resetsAt?: number;
   status?: string;
+  /**
+   * Antigravity counts limits per group of models (Gemini / Claude и GPT / Argon), each with its own 5-hour and weekly
+   * window: the group's id and name, and the base model ids in it (to show the group of the chat's model).
+   */
+  groupId?: string;
+  group?: string;
+  models?: string[];
 }
 
 export interface AgentLimits {
@@ -391,6 +404,11 @@ export type ClientMessage =
    * Answered with `created` (reqId).
    */
   | { t: 'fork'; reqId: string; chatId: ChatId; title: string; beforeItemId?: string; rewind?: boolean }
+  /**
+   * Continue the dialogue in another agent: a new chat (same folder) whose first message carries the whole history as a
+   * Markdown file; the new agent sums it up and waits. Answered with `created` (reqId).
+   */
+  | { t: 'handoff'; reqId: string; chatId: ChatId; agent: AgentKind; settings: ChatSettings; note?: string }
   /** Undo a rollback: show the original again, hide this branch. */
   | { t: 'unrewind'; chatId: ChatId }
   | { t: 'send'; chatId: ChatId; message: SendPayload }

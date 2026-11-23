@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // End-to-end smoke test against a running agentd (run ON THE SERVER — it starts real CLI sessions).
-// Usage: node scripts/e2e.mjs <socket> <claude|codex> <cwd> [model]
+// Usage: node scripts/e2e.mjs <socket> <claude|codex|antigravity> <cwd> [model]
 import WebSocket from 'ws';
 
 const [sock, agent = 'claude', cwd = '/tmp/agent-spike/proj', model] = process.argv.slice(2);
@@ -9,7 +9,12 @@ const t0 = Date.now();
 const log = (...a) => console.log(((Date.now() - t0) / 1000).toFixed(1), ...a);
 let chatId;
 let phase = 0;
-const settings = agent === 'claude' ? { model: model ?? 'haiku', permissionMode: 'default' } : { model, permissionMode: 'untrusted', effort: 'low' };
+const settings =
+  agent === 'claude'
+    ? { model: model ?? 'haiku', permissionMode: 'default' }
+    : agent === 'antigravity'
+      ? { model: model ?? 'gemini-3.8-flash', permissionMode: 'default', effort: 'low' }
+      : { model, permissionMode: 'untrusted', effort: 'low' };
 
 ws.on('open', () => {
   ws.send(

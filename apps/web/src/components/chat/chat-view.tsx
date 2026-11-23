@@ -23,8 +23,8 @@ import {
   BellRingIcon,
   BellIcon,
 } from 'lucide-react';
-import type { AgentCapabilities, ChatState, SendPayload } from '@mcc-agents/protocol';
-import { AgentMark } from '@/components/agent-badge';
+import type { AgentCapabilities, AgentKind, ChatState, SendPayload } from '@mcc-agents/protocol';
+import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { copyText } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { RenameDialog } from '@/components/chat-actions';
@@ -33,8 +33,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { capsCached } from '@/lib/api';
 import { setArchived } from '@/lib/archive';
-import { AGENT_NAME, continueInOtherAgent, otherAgent } from '@/lib/handoff';
-import { baseName, matchModel, shortPath, terminalCommand } from '@/lib/format';
+import { baseName, canBranch, matchModel, shortPath, terminalCommand } from '@/lib/format';
 import { store, useStore } from '@/lib/store';
 import { ui, useUi, type PanelTab } from '@/lib/ui';
 import { cn } from '@/lib/utils';
@@ -44,7 +43,7 @@ import { MessageList } from './message-list';
 import { StatusBar } from './status-bar';
 import { TodoBar } from './todo-bar';
 
-export function useCaps(agent: 'claude' | 'codex', cwd: string | undefined) {
+export function useCaps(agent: AgentKind, cwd: string | undefined) {
   const [caps, setCaps] = useState<AgentCapabilities | null>(null);
   useEffect(() => {
     if (!cwd) return;
@@ -71,6 +70,26 @@ function PanelButton({ tab, icon: Icon, label, badge }: { tab: PanelTab; icon: t
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/** «Продолжение чата … из Claude» / «Продолжен в Codex …» — a link to the other end of a handoff. */
+function HandoffBanner({ from, to }: { from?: string; to?: string }) {
+  const other = useStore((st) => st.chats[(from ?? to)!]);
+  if (!other) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => store.navigate({ kind: 'chat', chatId: other.id })}
+      className="flex w-full shrink-0 items-center gap-2 border-b bg-muted/50 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground md:px-4"
+    >
+      <ArrowRightLeftIcon className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">
+        {from ? `Продолжение чата из ${AGENT_NAME[other.agent]}: «${other.title}»` : `Продолжен в ${AGENT_NAME[other.agent]}: «${other.title}»`}
+      </span>
+      <AgentMark agent={other.agent} className="size-3.5 text-[8px]" />
+      <span className="shrink-0">Открыть →</span>
+    </button>
   );
 }
 
@@ -162,16 +181,18 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             <DropdownMenuItem className="py-2.5" onClick={() => setRename(true)}>
               <PencilIcon /> Переименовать
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="py-2.5"
-              disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'}
-              onClick={() => ui.set({ fork: { chatId: s.id } })}
-            >
-              <GitBranchIcon /> Форк чата…
+            <DropdownMenuItem className="py-2.5" disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'} onClick={() => ui.set({ handoff: { chatId: s.id } })}>
+              <ArrowRightLeftIcon /> Продолжить в другом агенте…
             </DropdownMenuItem>
-            <DropdownMenuItem className="py-2.5" onClick={() => void continueInOtherAgent(s)}>
-              <ArrowRightLeftIcon /> Продолжить в {AGENT_NAME[otherAgent(s.agent)]}…
-            </DropdownMenuItem>
+            {canBranch(s.id) && (
+              <DropdownMenuItem
+                className="py-2.5"
+                disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'}
+                onClick={() => ui.set({ fork: { chatId: s.id } })}
+              >
+                <GitBranchIcon /> Форк чата…
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               className="py-2.5"
               onClick={() => {
@@ -240,6 +261,8 @@ export function ChatView({ chatId }: { chatId: string }) {
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <Header state={state} caps={caps} />
       {s.rewoundFrom && <RewindBanner chatId={chatId} from={s.rewoundFrom} />}
+      {s.handoffFrom && <HandoffBanner from={s.handoffFrom} />}
+      {s.handoffTo && <HandoffBanner to={s.handoffTo} />}
       {s.archived && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground md:px-4">
           <ArchiveIcon className="size-3.5 shrink-0" />
@@ -271,7 +294,7 @@ export function ChatView({ chatId }: { chatId: string }) {
           placeholder={busy ? 'Добавить в очередь…' : undefined}
           autoFocus
         />
-        <StatusBar usage={state.usage} limits={limits} agent={s.agent} tasks={state.tasks} />
+        <StatusBar usage={state.usage} limits={limits} agent={s.agent} model={state.settings.model} tasks={state.tasks} />
       </div>
     </div>
   );

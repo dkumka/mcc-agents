@@ -26,7 +26,7 @@ import {
   XIcon,
 } from 'lucide-react';
 import type { ChatItem, NoticeItem, ThinkingItem, ToolCategory, ToolItem, UserItem } from '@mcc-agents/protocol';
-import { GitBranchIcon as BranchIcon, Undo2Icon } from 'lucide-react';
+import { ArrowRightLeftIcon, GitBranchIcon as BranchIcon, Undo2Icon } from 'lucide-react';
 import { rewindTo } from '@/components/chat/fork-dialog';
 import { FileDiffView } from '@/components/diff-view';
 import { FileActions, FileTypeIcon } from '@/components/file-viewer';
@@ -89,13 +89,13 @@ function Thumb({ src, name, onOpen }: { src?: string; name: string; onOpen?: () 
 }
 
 /** What a user message can do: copy, branch from it, roll the dialogue back to it (set by MessageList). */
-export const MessageActions = createContext<{ chatId: string; firstUserId: string | null; busy: boolean } | null>(null);
+export const MessageActions = createContext<{ chatId: string; firstUserId: string | null; busy: boolean; branching: boolean } | null>(null);
 
 function UserActions({ item }: { item: UserItem }) {
   const ctx = useContext(MessageActions);
   if (!ctx) return null;
   // before the very first message there is no dialogue to keep
-  const canBranch = item.id !== ctx.firstUserId;
+  const canBranch = ctx.branching && item.id !== ctx.firstUserId;
   const why = ctx.busy ? 'Дождитесь конца ответа' : undefined;
   const btn =
     'inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40';
@@ -189,7 +189,12 @@ const UserBubbleBody = memo(function UserBubbleBody({ item }: { item: UserItem }
   );
 });
 
+/** The CLIs' words for «out of limits / quota» (Claude, Codex, Antigravity) — offer to go on in another agent. */
+const LIMIT_RE = /usage limit|rate.?limit|limit reached|hit your( usage)? limit|quota|resource.?exhausted|out of (credits|usage)|too many requests|\b429\b|лимит/i;
+
 export function NoticeLine({ item }: { item: NoticeItem }) {
+  const ctx = useContext(MessageActions);
+  const limit = item.level !== 'info' && LIMIT_RE.test(item.text);
   return (
     <div
       className={cn(
@@ -198,7 +203,18 @@ export function NoticeLine({ item }: { item: NoticeItem }) {
       )}
     >
       {item.level === 'error' ? <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" /> : <span className="mt-1.5 size-1 shrink-0 rounded-full bg-current" />}
-      <span className="whitespace-pre-wrap break-anywhere">{item.text}</span>
+      <span className="min-w-0 flex-1">
+        <span className="whitespace-pre-wrap break-anywhere">{item.text}</span>
+        {limit && ctx && (
+          <button
+            type="button"
+            onClick={() => ui.set({ handoff: { chatId: ctx.chatId } })}
+            className="mt-1.5 flex h-8 items-center gap-1.5 rounded-md border bg-background px-2.5 text-xs text-foreground hover:bg-muted"
+          >
+            <ArrowRightLeftIcon className="size-3.5" /> Продолжить в другом агенте…
+          </button>
+        )}
+      </span>
     </div>
   );
 }

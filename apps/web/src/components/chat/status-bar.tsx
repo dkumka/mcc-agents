@@ -1,7 +1,7 @@
 'use client';
 
 import { ActivityIcon } from 'lucide-react';
-import type { AgentKind, AgentLimits, BgTask, Usage } from '@mcc-agents/protocol';
+import type { AgentKind, AgentLimits, BgTask, LimitWindow, Usage } from '@mcc-agents/protocol';
 import { useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,15 +25,40 @@ function Ring({ percent }: { percent: number }) {
   );
 }
 
+function UsageBar({ w }: { w: LimitWindow }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-medium">{w.label}</span>
+        <span className={cn('tabular', levelClass(w.usedPercent))}>{w.usedPercent}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn('h-full rounded-full', w.usedPercent >= 95 ? 'bg-destructive' : w.usedPercent >= 80 ? 'bg-warning' : 'bg-foreground/60')}
+          style={{ width: `${Math.min(100, w.usedPercent)}%` }}
+        />
+      </div>
+      <div className="text-muted-foreground">{w.resetsAt ? `Сброс ${resetIn(w.resetsAt)} — ${resetAt(w.resetsAt)}` : 'Время сброса неизвестно'}</div>
+    </div>
+  );
+}
+
 /**
  * «5 часов 6% · Неделя 9%» — tap (phone) or hover (mouse) shows when each limit resets.
  * The numbers come with the agents' own answers (Claude: rate_limit_event, Codex: account/rateLimits), so they can be a bit old.
+ * Antigravity counts per group of models: inline — the group of `model` (else the first, Gemini), the card — all groups.
  */
-export function LimitsInline({ limits, agent, className }: { limits: AgentLimits[]; agent: AgentKind; className?: string }) {
+export function LimitsInline({ limits, agent, model, className }: { limits: AgentLimits[]; agent: AgentKind; model?: string; className?: string }) {
   const l = limits.find((x) => x.agent === agent);
   const [open, setOpen] = useState(false);
   const hover = useRef<number | undefined>(undefined);
   if (!l || !l.windows.length) return null;
+  const grouped = l.windows.some((w) => w.groupId);
+  const gid = grouped ? ((model && l.windows.find((w) => w.models?.includes(model))?.groupId) ?? l.windows[0].groupId) : undefined;
+  // «5 часов» before «Неделя», as for Claude / Codex
+  const five = (w: LimitWindow) => (w.label === '5 часов' ? 0 : 1);
+  const shown = grouped ? l.windows.filter((w) => w.groupId === gid).sort((a, b) => five(a) - five(b)) : l.windows;
+  const groups = grouped ? [...new Set(l.windows.map((w) => w.groupId))].sort((a, b) => (a === gid ? -1 : b === gid ? 1 : 0)) : [];
   const fine = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   const enter = () => {
     if (!fine()) return;
@@ -45,6 +70,7 @@ export function LimitsInline({ limits, agent, className }: { limits: AgentLimits
     window.clearTimeout(hover.current);
     hover.current = window.setTimeout(() => setOpen(false), 200);
   };
+  const ago = ((a: string) => (a === 'сейчас' ? 'только что' : /\d (мин|ч|д)$/.test(a) ? `${a} назад` : a))(timeAgo(l.updatedAt));
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -55,36 +81,47 @@ export function LimitsInline({ limits, agent, className }: { limits: AgentLimits
           className={cn('inline-flex items-center gap-2 rounded px-0.5 text-left hover:text-foreground', className)}
           aria-label={`Лимиты ${AGENT_NAME[agent]}: когда сброс`}
         >
-          {l.windows.map((w) => (
+          {grouped && <span>{shown[0]?.group}</span>}
+          {shown.map((w) => (
             <span key={w.id} className={cn('tabular', levelClass(w.usedPercent))}>
               {w.label} {w.usedPercent}%
             </span>
           ))}
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-72 space-y-3 p-3 text-xs" onMouseEnter={enter} onMouseLeave={leave} onOpenAutoFocus={(e) => e.preventDefault()}>
+      <PopoverContent
+        side="top"
+        align="start"
+        className="max-h-[70vh] w-72 space-y-3 overflow-y-auto p-3 text-xs"
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-sm font-medium">{AGENT_NAME[agent]}</span>
           {l.plan && <span className="truncate text-muted-foreground">{l.plan}</span>}
         </div>
-        {l.windows.map((w) => (
-          <div key={w.id} className="space-y-1">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-medium">{w.label}</span>
-              <span className={cn('tabular', levelClass(w.usedPercent))}>{w.usedPercent}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn('h-full rounded-full', w.usedPercent >= 95 ? 'bg-destructive' : w.usedPercent >= 80 ? 'bg-warning' : 'bg-foreground/60')}
-                style={{ width: `${Math.min(100, w.usedPercent)}%` }}
-              />
-            </div>
-            <div className="text-muted-foreground">{w.resetsAt ? `Сброс ${resetIn(w.resetsAt)} — ${resetAt(w.resetsAt)}` : 'Время сброса неизвестно'}</div>
-          </div>
-        ))}
+        {grouped
+          ? groups.map((g) => {
+              const ws = l.windows.filter((w) => w.groupId === g).sort((a, b) => five(a) - five(b));
+              return (
+                <div key={g} className="space-y-2">
+                  <div className="font-medium text-foreground">
+                    {ws[0]?.group}
+                    {g === gid && model ? <span className="ml-1.5 font-normal text-muted-foreground">— модель этого чата</span> : null}
+                  </div>
+                  {ws.map((w) => (
+                    <UsageBar key={w.id} w={w} />
+                  ))}
+                </div>
+              );
+            })
+          : l.windows.map((w) => <UsageBar key={w.id} w={w} />)}
         {l.updatedAt ? (
           <div className="border-t pt-2 text-[11px] text-muted-foreground">
-            Данные приходят с ответами {AGENT_NAME[agent]}; последние — {((a) => (a === 'сейчас' ? 'только что' : /\d (мин|ч|д)$/.test(a) ? `${a} назад` : a))(timeAgo(l.updatedAt))}.
+            {agent === 'antigravity'
+              ? `У каждой группы моделей свои лимиты. Обновляются после каждого ответа Antigravity; последние — ${ago}.`
+              : `Данные приходят с ответами ${AGENT_NAME[agent]}; последние — ${ago}.`}
           </div>
         ) : null}
       </PopoverContent>
@@ -92,7 +129,7 @@ export function LimitsInline({ limits, agent, className }: { limits: AgentLimits
   );
 }
 
-export function StatusBar({ usage, limits, agent, tasks }: { usage?: Usage; limits: AgentLimits[]; agent: AgentKind; tasks: BgTask[] }) {
+export function StatusBar({ usage, limits, agent, model, tasks }: { usage?: Usage; limits: AgentLimits[]; agent: AgentKind; model?: string; tasks: BgTask[] }) {
   const running = tasks.filter((t) => t.status === 'running').length;
   return (
     <div className="mx-auto flex w-full max-w-3xl items-center gap-3 overflow-x-auto px-4 pt-1.5 text-[11px] text-muted-foreground md:px-7">
@@ -111,7 +148,7 @@ export function StatusBar({ usage, limits, agent, tasks }: { usage?: Usage; limi
           </TooltipContent>
         </Tooltip>
       )}
-      <LimitsInline limits={limits} agent={agent} className="shrink-0" />
+      <LimitsInline limits={limits} agent={agent} model={model} className="shrink-0" />
       {tasks.length > 0 && (
         <button type="button" onClick={() => ui.set({ panel: 'tasks' })} className={cn('ml-auto inline-flex shrink-0 items-center gap-1 hover:text-foreground', running && 'text-info')}>
           <ActivityIcon className="size-3" />

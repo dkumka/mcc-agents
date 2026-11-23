@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: '/',
     name: 'mcc agents',
     short_name: 'agents',
-    description: 'Claude Code и Codex на сервере mcc',
+    description: 'Claude Code, Codex и Antigravity на сервере mcc',
     lang: 'ru',
     start_url: '/',
     scope: '/',

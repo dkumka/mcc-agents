@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, Loader2Icon } from 'lucide-react';
 import type { ChatItem, ChatState, ToolItem } from '@mcc-agents/protocol';
+import { canBranch } from '@/lib/format';
 import { FileBase, FileHints, Markdown, TaskPrompt } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { pathsNamed } from '@/lib/files';
@@ -180,7 +181,8 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
 
   const firstUserId = useMemo(() => state.items.find((i) => i.kind === 'user')?.id ?? null, [state.items]);
   const anyBusy = busy || state.summary.status === 'waiting';
-  const actions = useMemo(() => ({ chatId, firstUserId, busy: anyBusy }), [chatId, firstUserId, anyBusy]);
+  // Antigravity (ACP) has no fork / rewind
+  const actions = useMemo(() => ({ chatId, firstUserId, busy: anyBusy, branching: canBranch(chatId) }), [chatId, firstUserId, anyBusy]);
   // read on click, so links don't re-render on every streamed item
   const itemsRef = useRef(state.items);
   useEffect(() => {

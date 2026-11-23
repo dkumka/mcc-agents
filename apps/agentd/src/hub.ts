@@ -21,6 +21,7 @@ import { Chat, type ChatSink } from './chat.ts';
 import { CHAT_ROOT, isChatDir, newChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
+import { handoffFile, handoffMessage } from './handoff.ts';
 import { store, type ChatMeta } from './store.ts';
 import { TelegramBridge, escapeHtml } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
@@ -35,6 +36,8 @@ export interface Adapter {
   list(): Promise<ChatSummary[]>;
   load(chat: Chat): Promise<void>;
   prepare(cwd: string, settings: ChatSettings): Promise<string>;
+  /** A browser connected (opened the UI): a chance to refresh stale data, e.g. limits. */
+  clientConnected?(): void;
   /** Copy the dialogue into a new session (up to, not including, the user message `beforeItemId`); returns its native id. */
   fork(chat: Chat, title: string, beforeItemId?: string): Promise<string>;
   send(chat: Chat, message: SendPayload, uuid: string, isNew: boolean): Promise<void>;
@@ -55,7 +58,7 @@ export interface Client {
   visible: string | null;
 }
 
-const AGENT_LABEL: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' };
+const AGENT_LABEL: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
 
 export class Hub implements ChatSink {
   adapters = {} as Record<AgentKind, Adapter>;
@@ -79,12 +82,14 @@ export class Hub implements ChatSink {
 
   /** Start the Telegram bridge (reads ~/secrets) and tidy messages left from a previous run. */
   startTelegram() {
+    if (!config.telegram) return;
     this.tg.reload();
     this.tga.markStale().catch(() => {});
   }
 
   /** Called periodically: pick up a token added with secret-set without a restart. */
   tick() {
+    if (!config.telegram) return;
     const before = this.tg.ready;
     this.tg.maybeReload();
     if (before !== this.tg.ready) this.broadcast({ t: 'prefs', prefs: this.prefsState() });
@@ -122,6 +127,8 @@ export class Hub implements ChatSink {
     if (meta.hidden) out.hidden = true;
     if (meta.archived) out.archived = true;
     if (meta.notifyDone) out.notifyDone = true;
+    if (meta.handoffFrom) out.handoffFrom = meta.handoffFrom;
+    if (meta.handoffTo) out.handoffTo = meta.handoffTo;
     out.unread = meta.lastSeen !== undefined && out.updatedAt > meta.lastSeen + 3000 && out.status === 'idle';
     return out;
   }
@@ -295,6 +302,7 @@ export class Hub implements ChatSink {
 
   addClient(c: Client) {
     this.clients.add(c);
+    for (const a of Object.values(this.adapters)) a.clientConnected?.();
     c.send({ t: 'hello', version: config.version, host: process.env.HOSTNAME ?? 'mcc' });
     c.send({ t: 'chats', chats: this.summaries() });
     c.send({ t: 'limits', limits: store.limits() });
@@ -343,6 +351,42 @@ export class Hub implements ChatSink {
     };
   }
 
+  /** A new chat: prepare the CLI session, show it, send the first message. Returns the chat id. */
+  private async startChat(
+    client: Client,
+    o: { reqId: string; agent: AgentKind; cwd: string; settings: ChatSettings; message: SendPayload; title?: string; meta?: Partial<ChatMeta> },
+  ): Promise<string> {
+    const adapter = this.adapters[o.agent];
+    const settings: ChatSettings = { ...o.settings };
+    const nativeId = await adapter.prepare(o.cwd, settings);
+    const id = `${o.agent}:${nativeId}`;
+    const now = Date.now();
+    const firstLine = o.message.text.trim().split('\n')[0] || 'Новый чат';
+    const chat = new Chat(
+      { id, agent: o.agent, nativeId, cwd: o.cwd, title: (o.title ?? firstLine).slice(0, 100), createdAt: now, updatedAt: now, status: 'starting', origin: 'web', model: settings.model },
+      this,
+    );
+    chat.loaded = true;
+    chat.state.settings = settings;
+    this.chats.set(id, chat);
+    store.setMeta(id, { web: true, settings, lastSeen: now, ...(o.title ? { title: o.title } : {}), ...o.meta });
+    store.setLastSettings(o.agent, settings);
+    client.subs.add(id);
+    client.visible = id;
+    this.summaryChanged(chat);
+    client.send({ t: 'created', reqId: o.reqId, chatId: id });
+    client.send({ t: 'snapshot', chatId: id, state: { ...chat.snapshot(), summary: this.decorate(chat.summary) } });
+    const uuid = randomUUID();
+    chat.upsert(this.userItem(uuid, o.message));
+    try {
+      await adapter.send(chat, { ...o.message, text: textWithFiles(o.message), files: undefined }, uuid, true);
+    } catch (e) {
+      chat.notice('error', (e as Error).message);
+      chat.setStatus('error');
+    }
+    return id;
+  }
+
   async handle(client: Client, msg: ClientMessage) {
     switch (msg.t) {
       case 'ping':
@@ -375,33 +419,31 @@ export class Hub implements ChatSink {
         if (msg.mode === 'chat') msg.cwd = newChatDir();
         else if (!msg.cwd || !fs.existsSync(msg.cwd)) throw new Error(`папка не найдена: ${msg.cwd}`);
         if (store.project(msg.cwd).deleted || store.project(msg.cwd).archived) store.setProject(msg.cwd, { deleted: false, archived: false });
-        const settings: ChatSettings = { ...msg.settings };
-        const nativeId = await adapter.prepare(msg.cwd, settings);
-        const id = `${msg.agent}:${nativeId}`;
-        const now = Date.now();
-        const firstLine = msg.message.text.trim().split('\n')[0] || 'Новый чат';
-        const chat = new Chat(
-          { id, agent: msg.agent, nativeId, cwd: msg.cwd, title: firstLine.slice(0, 100), createdAt: now, updatedAt: now, status: 'starting', origin: 'web', model: settings.model },
-          this,
-        );
-        chat.loaded = true;
-        chat.state.settings = settings;
-        this.chats.set(id, chat);
-        store.setMeta(id, { web: true, settings, lastSeen: now });
-        store.setLastSettings(msg.agent, settings);
-        client.subs.add(id);
-        client.visible = id;
-        this.summaryChanged(chat);
-        client.send({ t: 'created', reqId: msg.reqId, chatId: id });
-        client.send({ t: 'snapshot', chatId: id, state: { ...chat.snapshot(), summary: this.decorate(chat.summary) } });
-        const uuid = randomUUID();
-        chat.upsert(this.userItem(uuid, msg.message));
-        try {
-          await adapter.send(chat, { ...msg.message, text: textWithFiles(msg.message), files: undefined }, uuid, true);
-        } catch (e) {
-          chat.notice('error', (e as Error).message);
-          chat.setStatus('error');
-        }
+        await this.startChat(client, { reqId: msg.reqId, agent: msg.agent, cwd: msg.cwd, settings: msg.settings, message: msg.message });
+        return;
+      }
+      case 'handoff': {
+        const src = this.need(msg.chatId);
+        if (!this.adapters[msg.agent]) throw new Error('неизвестный агент');
+        if (src.summary.status === 'running' || src.summary.status === 'starting' || src.summary.status === 'waiting')
+          throw new Error('Агент ещё работает — дождитесь конца ответа или остановите его');
+        if (!src.cwd || !fs.existsSync(src.cwd)) throw new Error(`папка чата не найдена: ${src.cwd}`);
+        // the history comes from disk (Claude .jsonl / Codex turns / agy session/load): the old agent's limits are not spent
+        await this.ensureLoaded(src);
+        const title = this.decorate(src.summary).title;
+        const file = await handoffFile(src, title);
+        log.info(`handoff ${src.id} → ${msg.agent} (${src.state.items.length} items, ${file.size} B)`);
+        const id = await this.startChat(client, {
+          reqId: msg.reqId,
+          agent: msg.agent,
+          cwd: src.cwd, // a conversation (~/chat/…) goes on in its own folder too
+          settings: msg.settings,
+          message: { text: handoffMessage(src.agent, title, src.cwd, msg.note), files: [file] },
+          title,
+          meta: { handoffFrom: src.id },
+        });
+        store.setMeta(src.id, { handoffTo: id });
+        this.summaryChanged(src);
         return;
       }
       case 'fork': {
@@ -578,6 +620,8 @@ export class Hub implements ChatSink {
       for (const c of this.clients) if (c.subs.has(chat.id)) watched = true;
       if (watched || now - chat.lastActivity < 10 * 60_000) continue;
       const a = this.adapters[chat.agent];
+      // Codex only: closing an Antigravity session (session/close) also kills its background tasks (dev servers, long
+      // commands) — seen in agy's log 2026-11-23 — so its sessions stay open
       if (chat.agent === 'codex' && a.isLive(chat) && chat.summary.status === 'idle') {
         a.release(chat).catch(() => {});
         continue;

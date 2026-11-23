@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArchiveIcon, CheckIcon, ChevronRightIcon, CodeXmlIcon, FolderPlusIcon, GitBranchIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
-import type { ChatMode, ChatSummary } from '@mcc-agents/protocol';
+import { ArchiveIcon, ArrowRightLeftIcon, CheckIcon, ChevronRightIcon, CodeXmlIcon, FolderPlusIcon, GitBranchIcon, MessageCircleIcon, MoonIcon, PinIcon, PlusIcon, RefreshCwIcon, SearchIcon, SettingsIcon, SunIcon, WifiOffIcon } from 'lucide-react';
+import { AGENTS, type ChatMode, type ChatSummary } from '@mcc-agents/protocol';
 import { ChatActions, ProjectActions } from '@/components/chat-actions';
 import { AgentMark, StatusDot } from '@/components/agent-badge';
 import { LimitsInline } from '@/components/chat/status-bar';
@@ -36,6 +36,7 @@ function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPic
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold')}>{c.title}</span>
         {c.forkOf && <GitBranchIcon className="size-3 shrink-0 text-muted-foreground" aria-label="ветка" />}
         {c.taskStage && <span title={c.taskStage === 'done' ? 'Готово' : 'В работе'} aria-label={c.taskStage === 'done' ? 'Готово' : 'В работе'} className="inline-flex shrink-0 items-center text-emerald-600">{c.taskStage === 'done' ? <CheckIcon className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}</span>}
+        {c.handoffFrom && <ArrowRightLeftIcon className="size-3 shrink-0 text-muted-foreground" aria-label="продолжение из другого агента" />}
         <StatusDot status={c.status} unread={c.unread} />
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>
       </SidebarMenuButton>
@@ -153,7 +154,7 @@ export function AppSidebar() {
           <div className="flex size-7 items-center justify-center rounded-md bg-foreground font-mono text-xs font-bold text-background">&gt;_</div>
           <div className="min-w-0 flex-1 leading-tight">
             <div className="text-sm font-semibold">mcc agents</div>
-            <div className="truncate text-[11px] text-muted-foreground">Claude Code · Codex</div>
+            <div className="truncate text-[11px] text-muted-foreground">Claude Code · Codex · Antigravity</div>
           </div>
           {!connected && everConnected && <WifiOffIcon className="size-4 text-destructive" aria-label="нет связи" />}
         </div>
@@ -252,7 +253,7 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="pb-safe gap-1 border-t">
         <div className="space-y-1 px-1 text-[11px] text-muted-foreground">
-          {(['claude', 'codex'] as const).map((a) => (
+          {AGENTS.map((a) => (
             <div key={a} className="flex items-center gap-1.5">
               <AgentMark agent={a} className="size-3.5 text-[8px]" />
               <LimitsInline limits={limits} agent={a} />

@@ -23,6 +23,9 @@ export interface ChatMeta {
   hidden?: boolean;
   /** One-shot «tell me in Telegram when it's done». */
   notifyDone?: boolean;
+  /** «Продолжить в другом агенте»: continues that chat / was last continued in that chat. */
+  handoffFrom?: string;
+  handoffTo?: string;
 }
 
 interface StoreData {

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { setArchived } from '@/lib/archive';
-import { AGENT_NAME, continueInOtherAgent, otherAgent } from '@/lib/handoff';
+import { canBranch } from '@/lib/format';
 import { store } from '@/lib/store';
 import { ui } from '@/lib/ui';
 
@@ -83,8 +83,8 @@ export function ChatActions({ chat }: { chat: ChatSummary }) {
       <DropdownMenuContent align="end" className="min-w-48 [&_[role=menuitem]]:min-h-10">
         <DropdownMenuItem onClick={() => setRename(true)}>Переименовать</DropdownMenuItem>
         <DropdownMenuItem onClick={() => store.meta(chat.id, { pinned: !chat.pinned })}>{chat.pinned ? 'Открепить' : 'Закрепить'}</DropdownMenuItem>
-        <DropdownMenuItem disabled={chat.status === 'running' || chat.status === 'starting' || chat.status === 'waiting'} onClick={() => ui.set({ fork: { chatId: chat.id } })}>Форк чата…</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => void continueInOtherAgent(chat)}>Продолжить в {AGENT_NAME[otherAgent(chat.agent)]}…</DropdownMenuItem>
+        {canBranch(chat.id) && <DropdownMenuItem disabled={chat.status === 'running' || chat.status === 'starting' || chat.status === 'waiting'} onClick={() => ui.set({ fork: { chatId: chat.id } })}>Форк чата…</DropdownMenuItem>}
+        <DropdownMenuItem disabled={chat.status === 'running' || chat.status === 'starting' || chat.status === 'waiting'} onClick={() => ui.set({ handoff: { chatId: chat.id } })}>Продолжить в другом агенте…</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => store.meta(chat.id, { taskStage: 'in-progress' })}>В работе {chat.taskStage === 'in-progress' ? '✓' : ''}</DropdownMenuItem>
         <DropdownMenuItem onClick={() => store.meta(chat.id, { taskStage: 'done' })}>Готово {chat.taskStage === 'done' ? '✓' : ''}</DropdownMenuItem>

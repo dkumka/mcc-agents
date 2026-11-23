@@ -77,11 +77,20 @@ const MODE_SHORT: Record<string, string> = {
   default: 'Спрос',
   untrusted: 'Спрос',
   acceptEdits: 'Правки',
+  'accept-edits': 'Правки',
+  plan: 'План',
+  auto: 'Авто',
   'on-request': 'Проект',
   'read-only': 'Чтение',
-  bypassPermissions: 'Полный',
+  bypassPermissions: 'Без вопр.',
   never: 'Полный',
 };
+
+/** Phone, Antigravity: «Gemini 4 Neon» → «4 Neon», «GPT-OSS 120B» → «OSS 120B», «Orchestrator (Neon)» → «Orch. Neon». */
+function shortModel(label: string, short?: boolean) {
+  if (!short) return label;
+  return label.replace(/^(Gemini|Claude) /, '').replace(/^GPT-OSS /, 'OSS ').replace(/^Orchestrator \((.+)\)$/, 'Orch. $1');
+}
 
 function Chip({ icon: Icon, children, className, compact, ...p }: React.ComponentProps<'button'> & { icon: typeof CpuIcon; compact?: boolean }) {
   return (
@@ -117,14 +126,16 @@ export function SettingsChips({
   const efforts = model?.efforts ?? [];
   const modes = caps?.permissionModes ?? [];
   const mode = modes.find((m) => m.id === (settings.permissionMode ?? caps?.defaults.permissionMode));
-  const effort = settings.effort ?? model?.defaultEffort ?? caps?.defaults.effort;
+  // a level the picked model does not have is not what runs (Antigravity GPT-OSS: medium only) — show its default
+  const chosen = settings.effort && (!efforts.length || efforts.includes(settings.effort)) ? settings.effort : undefined;
+  const effort = chosen ?? model?.defaultEffort ?? caps?.defaults.effort;
   const modelLabel = model?.label ?? settings.model ?? 'Модель';
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Chip icon={CpuIcon} compact={compact} aria-label={`Модель: ${modelLabel}`}>
-            {modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1')}
+            {shortModel(modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1'), compact && caps?.agent === 'antigravity')}
           </Chip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">

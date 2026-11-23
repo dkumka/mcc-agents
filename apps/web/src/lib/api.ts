@@ -32,7 +32,6 @@ export const api = {
   voice: () => get<{ records: VoiceRecord[]; bytes: number; dir: string }>('voice'),
   output: (chatId: string, itemId: string) => get<{ output: string }>('output', { chatId, itemId }),
   taskOutput: (chatId: string, taskId: string) => get<{ output: string; file: string }>('task-output', { chatId, taskId }),
-  sessionFile: (chatId: string) => get<{ agent: AgentKind; path: string; cwd: string; mode: 'chat' | 'code'; title: string }>('session-file', { chatId }),
 };
 
 /** Upload any file for the agent (stored on the server, outside the project). XHR — for the progress bar. */

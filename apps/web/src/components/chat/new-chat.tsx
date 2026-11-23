@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { CheckIcon, ChevronsUpDownIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, GitBranchIcon } from 'lucide-react';
 import { NewProjectDialog } from '@/components/new-project-dialog';
-import type { AgentCapabilities, AgentKind, ChatMode, ChatSettings, ProjectInfo, SendPayload } from '@mcc-agents/protocol';
+import { AGENTS, type AgentCapabilities, type AgentKind, type ChatMode, type ChatSettings, type ProjectInfo, type SendPayload } from '@mcc-agents/protocol';
 import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -107,7 +107,7 @@ function ProjectPicker({ value, onChange, projects, onNew }: { value: string; on
   );
 }
 
-function lastSettings(agent: AgentKind): ChatSettings {
+export function lastSettings(agent: AgentKind): ChatSettings {
   try {
     return JSON.parse(localStorage.getItem(`settings:${agent}`) ?? '{}');
   } catch {
@@ -116,7 +116,7 @@ function lastSettings(agent: AgentKind): ChatSettings {
 }
 
 /** The «decide yourself, ask only about risky things» mode: Claude `auto`, Codex `on-request`. */
-function autoMode(caps: AgentCapabilities): string | undefined {
+export function autoMode(caps: AgentCapabilities): string | undefined {
   const has = (m: string) => caps.permissionModes.some((x) => x.id === m);
   return has('auto') ? 'auto' : has('on-request') ? 'on-request' : caps.defaults.permissionMode;
 }
@@ -136,25 +136,25 @@ export function NewChat({ initialCwd, initialAgent, draft, mode = 'code' }: { in
   return mode === 'chat' ? <NewConversation draft={draft} key="chat" initialAgent={initialAgent} /> : <NewProjectChat draft={draft} key="code" initialCwd={initialCwd} initialAgent={initialAgent} />;
 }
 
-function AgentCards({ agent, onChange, compact }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean }) {
+export function AgentCards({ agent, onChange, compact, agents = AGENTS }: { agent: AgentKind; onChange: (a: AgentKind) => void; compact?: boolean; agents?: AgentKind[] }) {
   const limits = useStore((s) => s.limits);
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {(['claude', 'codex'] as AgentKind[]).map((a) => (
+    <div className={cn('grid gap-2', agents.length === 2 ? 'grid-cols-2' : 'grid-cols-3')}>
+      {agents.map((a) => (
         <button
           key={a}
           type="button"
           onClick={() => onChange(a)}
           className={cn(
-            'flex items-center gap-2.5 rounded-xl border px-3 text-left transition-colors',
+            'flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1.5 text-center transition-colors sm:flex-row sm:justify-start sm:gap-2.5 sm:px-3 sm:text-left',
             compact ? 'h-12' : 'h-14',
             agent === a ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
           )}
         >
-          <AgentMark agent={a} className="size-6 text-xs" />
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">{AGENT_NAME[a]}</span>
-            <span className="block truncate text-[11px] text-muted-foreground">
+          <AgentMark agent={a} className="size-5 text-[11px] sm:size-6 sm:text-xs" />
+          <span className="min-w-0 max-w-full">
+            <span className="block truncate text-[13px] font-medium sm:text-sm">{AGENT_NAME[a]}</span>
+            <span className="hidden truncate text-[11px] text-muted-foreground sm:block">
               <LimitsInline limits={limits} agent={a} />
             </span>
           </span>
@@ -247,7 +247,9 @@ function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: stri
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [newProject, setNewProject] = useState(false);
   const [cwd, setCwd] = useState(initialCwd ?? '');
-  const [agent, setAgent] = useState<AgentKind>(initialAgent ?? ((typeof window !== 'undefined' && (localStorage.getItem('lastAgent') as AgentKind)) || 'claude'));
+  // the last agent comes after mounting: read during render it differs from the server HTML, and React keeps the server's
+  // highlighted card (Claude) while the composer already says «Antigravity»
+  const [agent, setAgent] = useState<AgentKind>(initialAgent ?? 'claude');
   const [settings, setSettings] = useState<ChatSettings>({});
   const [sending, setSending] = useState(false);
   const caps = useCaps(agent, cwd || HOME);
@@ -268,6 +270,10 @@ function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: stri
   useEffect(() => {
     if (initialAgent) setAgent(initialAgent);
   }, [initialAgent]);
+  useEffect(() => {
+    const last = localStorage.getItem('lastAgent') as AgentKind | null;
+    if (!initialAgent && last && AGENTS.includes(last)) setAgent(last);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // model and effort: what was used last time; permissions: always «Авто» (Claude) / «Модель решает» (Codex) —
   // change it in the chip for this chat if needed
@@ -318,7 +324,7 @@ function NewProjectChat({ initialCwd, initialAgent, draft }: { initialCwd?: stri
         <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-5 px-4 py-8">
           <div className="space-y-1 text-center">
             <h2 className="text-xl font-semibold tracking-tight">С чего начнём?</h2>
-            <p className="text-sm text-muted-foreground">Сессии те же, что в терминале: их видят `claude --resume` и `codex resume`.</p>
+            <p className="text-sm text-muted-foreground">Сессии те же, что в терминале: их видят `claude --resume`, `codex resume` и `agy --conversation`.</p>
           </div>
           <div className="space-y-2">
             <AgentCards agent={agent} onChange={setAgent} />

@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 export const metadata: Metadata = {
   title: 'mcc agents',
-  description: 'Claude Code и Codex на сервере mcc',
+  description: 'Claude Code, Codex и Antigravity на сервере mcc',
   robots: { index: false, follow: false },
   appleWebApp: { capable: true, title: 'mcc agents', statusBarStyle: 'black-translucent' },
   formatDetection: { telephone: false },

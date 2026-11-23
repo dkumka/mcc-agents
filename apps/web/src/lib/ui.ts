@@ -29,6 +29,8 @@ export interface ForkRequest {
 
 interface UiState {
   fork: ForkRequest | null;
+  /** «Продолжить в другом агенте» for this chat. */
+  handoff: { chatId: string } | null;
   panel: PanelTab | null;
   /** Wrap long lines in the side panel (files, diffs). */
   wrap: boolean;
@@ -36,7 +38,7 @@ interface UiState {
   viewer: ViewerFile | null;
 }
 
-let state: UiState = { fork: null, panel: null, wrap: true, panelFile: null, viewer: null };
+let state: UiState = { fork: null, handoff: null, panel: null, wrap: true, panelFile: null, viewer: null };
 if (typeof window !== 'undefined') state.wrap = localStorage.getItem('panelWrap') !== '0';
 const listeners = new Set<() => void>();
 

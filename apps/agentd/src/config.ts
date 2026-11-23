@@ -17,6 +17,8 @@ export const config = {
   dataDir: process.env.AGENTD_DATA ?? path.join(home, '.local/share/mcc-agents'),
   claudeBin: process.env.CLAUDE_BIN ?? 'claude',
   codexBin: process.env.CODEX_BIN ?? 'codex',
+  /** Antigravity CLI — the official installer puts it into ~/.local/bin (not always on the service's PATH). */
+  agyBin: process.env.AGY_BIN ?? path.join(home, '.local/bin/agy'),
   claudeProjects: path.join(home, '.claude/projects'),
   /** Conversations outside projects ("Чат" mode): one folder per chat inside. */
   chatRoot: process.env.AGENTD_CHAT_ROOT ?? path.join(home, 'chat'),
@@ -26,6 +28,8 @@ export const config = {
   claudeIdleMs: Number(process.env.AGENTD_CLAUDE_IDLE_MS ?? 20 * 60_000),
   /** Telegram via /usr/local/bin/notify when a chat finishes / needs approval and nobody is looking. */
   notify: process.env.AGENTD_NOTIFY !== '0',
+  /** The agents' Telegram bot (one poller per token: a test instance runs with AGENTD_TELEGRAM=0). */
+  telegram: process.env.AGENTD_TELEGRAM !== '0',
   notifyBin: process.env.AGENTD_NOTIFY_BIN ?? 'notify',
   publicUrl: process.env.AGENTD_PUBLIC_URL ?? 'https://agents.mcc.klemid.ru',
   /** Entrypoint tag written into Claude sessions (makes them visible in `claude --resume`). */

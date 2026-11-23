@@ -1,13 +1,14 @@
 # mcc agents
 
-Личная веб-оболочка над официальными CLI **Claude Code** (`claude`) и **Codex** (`codex`) на сервере разработки `mcc`.
+Личная веб-оболочка над официальными CLI **Claude Code** (`claude`), **Codex** (`codex`) и **Antigravity** (`agy`, на этом сервере пока не установлен) на сервере разработки `mcc`.
 Адрес: **https://agents.mcc.example.com**. Вход — общей формой https://auth.mcc.example.com (сервис `mcc-auth` из репозитория
 `mcc-server`, cookie на все `*.mcc.example.com`; логин и пароль — прежние, `/etc/nginx/code.htpasswd`).
 
-- Без SDK: запускаются сами CLI в их штатных режимах — `claude -p` (stream-json + control-протокол) и `codex app-server` (JSON-RPC).
-  Вход — собственный OAuth каждого CLI (`claude` / `codex login --device-auth` по SSH), токены оболочка не трогает.
-- Сессии **общие с терминалом**: те же файлы `~/.claude/projects/…` и `~/.codex/sessions/…`. Веб-чаты видны в
-  `claude --resume` / `codex resume`, терминальные — в вебе.
+- Без SDK: запускаются сами CLI в их штатных режимах — `claude -p` (stream-json + control-протокол), `codex app-server`
+  (JSON-RPC) и `agy acp` (Agent Client Protocol). Вход — собственный вход каждого CLI (`claude` / `codex login --device-auth` /
+  `agy` по SSH), токены оболочка не трогает.
+- Сессии **общие с терминалом**: те же файлы `~/.claude/projects/…`, `~/.codex/sessions/…`, `~/.gemini/antigravity-cli/…`.
+  Веб-чаты видны в `claude --resume` / `codex resume` / `agy --conversation <id>`, терминальные — в вебе.
 - Интерфейс в духе Claude Code: слева проекты и чаты, по центру чат с карточками инструментов, справа — изменения git,
   файлы, фоновые задачи. Светлая/тёмная тема, нормальная мобильная версия.
 
@@ -43,7 +44,9 @@ sudo bash ~/dev/mcc/mcc-agents/scripts/deploy-server.sh --web    # только 
 Тест без входа (например, из iOS Simulator на Mac): `ssh -N -L 3119:/run/mcc-agents/local.sock dev@SERVER_IP`
 → http://localhost:3119. Сокет `local.sock` доступен только пользователю `dev`.
 
-Сквозной тест протокола (на сервере, тратит немного лимита): `node scripts/e2e.mjs /run/mcc-agents/local.sock claude /tmp/agent-spike/proj haiku`.
+Сквозной тест протокола (на сервере, тратит немного лимита): `node scripts/e2e.mjs /run/mcc-agents/local.sock claude /tmp/agent-spike/proj haiku`
+(агент — `claude` / `codex` / `antigravity`; для Antigravity по умолчанию Gemini 3.8 Flash). Тестовый экземпляр демона рядом с
+рабочим — см. ARCHITECTURE, раздел Antigravity (`AGENTD_TELEGRAM=0`).
 
 ## Сервисы на сервере
 
