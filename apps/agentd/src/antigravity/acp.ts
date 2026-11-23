@@ -87,6 +87,10 @@ export class AcpServer extends EventEmitter {
     return this.starting;
   }
 
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
   stop() {
     this.stopped = true;
     this.child?.kill('SIGTERM');

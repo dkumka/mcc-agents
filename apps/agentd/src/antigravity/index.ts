@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type {
   AgentCapabilities,
@@ -38,6 +39,24 @@ const MODE_TEXT: Record<string, { label: string; description: string }> = {
   plan: { label: 'План', description: 'Сначала план, потом работа' },
 };
 const STATIC_MODES = ['accept-edits', 'default', 'plan'];
+
+/**
+ * Before any session is opened the modes are unknown. agy offers Auto when its terminal sandbox works, i.e. when it may
+ * create user namespaces: the Ubuntu restriction is off, or agy runs under its own AppArmor profile (/etc/apparmor.d/agy,
+ * label «agy (unconfined)» instead of «unconfined»; see docs/ARCHITECTURE.md).
+ */
+function sandboxLikely(pid?: number): boolean {
+  try {
+    if (fs.readFileSync('/proc/sys/kernel/apparmor_restrict_unprivileged_userns', 'utf8').trim() === '0') return true;
+  } catch {
+    return true; // no such restriction on this system
+  }
+  try {
+    return !!pid && fs.readFileSync(`/proc/${pid}/attr/current`, 'utf8').trim() !== 'unconfined';
+  } catch {
+    return false;
+  }
+}
 
 function modeInfo(id: string, fallback?: Json): PermissionModeInfo {
   const t = MODE_TEXT[id];
@@ -208,6 +227,8 @@ export class AntigravityAdapter implements Adapter {
   private pending = new Map<string, PendingReq>();
   private models: ModelInfo[] = [];
   private modes: PermissionModeInfo[] = STATIC_MODES.map((m) => modeInfo(m));
+  /** `modes` came from a real session (else: a guess, see sandboxLikely). */
+  private modesKnown = false;
   private commands: SlashCommand[] = [];
   private defaultModelId?: string;
   private tier?: string;
@@ -299,8 +320,10 @@ export class AntigravityAdapter implements Adapter {
     }
     if (models?.currentModelId) st.modelId = String(models.currentModelId);
     const modes = r?.modes;
-    if (Array.isArray(modes?.availableModes) && modes.availableModes.length)
+    if (Array.isArray(modes?.availableModes) && modes.availableModes.length) {
       this.modes = (modes.availableModes as Json[]).map((m) => modeInfo(String(m.id), m));
+      this.modesKnown = true;
+    }
     if (modes?.currentModeId) st.mode = String(modes.currentModeId);
     const tier = r?._meta?.antigravity?.tier?.name;
     if (tier && tier !== this.tier) {
@@ -363,12 +386,15 @@ export class AntigravityAdapter implements Adapter {
         if (it.kind === 'tool' && (it.status === 'running' || it.status === 'pending')) chat.upsert({ ...it, status: 'interrupted' }, { silent: true });
     const meta = store.meta(chat.id);
     const cur = this.settingsOf(st);
+    // mode not chosen here: «Авто» where agy offers it (as Claude / Codex), else what the session has
+    const auto = this.modes.some((m) => m.id === 'auto') ? 'auto' : undefined;
     chat.state.settings = {
       model: meta.settings?.model ?? cur.model,
       effort: meta.settings?.effort ?? cur.effort,
-      permissionMode: meta.settings?.permissionMode ?? cur.permissionMode,
+      permissionMode: meta.settings?.permissionMode ?? auto ?? cur.permissionMode,
     };
-    if (meta.settings) await this.apply(sid, chat.state.settings).catch((e) => log.warn(`apply settings ${sid}`, e));
+    if (meta.settings || chat.state.settings.permissionMode !== cur.permissionMode)
+      await this.apply(sid, chat.state.settings).catch((e) => log.warn(`apply settings ${sid}`, e));
     chat.state.live = true;
     chat.state.summary.status = st.inflight ? 'running' : 'idle';
   }
@@ -714,6 +740,7 @@ export class AntigravityAdapter implements Adapter {
     try {
       await this.acp.start();
       if (!this.models.length) await this.listModels();
+      if (!this.modesKnown) this.modes = (sandboxLikely(this.acp.pid) ? ['auto', ...STATIC_MODES] : STATIC_MODES).map((m) => modeInfo(m));
       const def = this.models.find((m) => m.isDefault) ?? this.models[0];
       const modes = this.modes;
       const caps: AgentCapabilities = {

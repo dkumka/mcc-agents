@@ -102,10 +102,17 @@
 - Модели: `availableModels` вида `gemini-4-neon-high` → модель `gemini-4-neon` + глубина `high` (у Orchestrator глубины нет,
   у GPT-OSS — только `medium`); выбор — `session/set_model` с полным id. До первой сессии в процессе список берётся из
   `agy models`. Режимы — `session/set_mode`: `default` «Спрашивать», `accept-edits` «Правки без вопросов», `plan` «План».
-- **Режима Auto нет** — agy включает его только при своей песочнице для команд, а на сервере её не пускает AppArmor
-  (`kernel.apparmor_restrict_unprivileged_userns = 1`, в журнале agy: «auto mode is unavailable because the terminal sandbox
-  is unavailable»). Поэтому по умолчанию — «Правки без вопросов» (команды спрашиваются). Если Auto появится (профиль AppArmor
-  для agy), адаптер возьмёт его сам: режимы берутся из ответа сессии, `auto` → по умолчанию.
+- **Режим Auto** agy даёт только при своей песочнице для команд (user + mount namespaces), а Ubuntu запрещает их обычным
+  программам (`kernel.apparmor_restrict_unprivileged_userns = 1`; в журнале agy было «auto mode is unavailable because the
+  terminal sandbox is unavailable»). С 2026-11-23 — точечный профиль `/etc/apparmor.d/agy` (как у chrome/code в Ubuntu:
+  `flags=(unconfined)` + `userns`, только для `~/.local/bin/agy`; поставил пользователь). Проверено: режим `auto` в
+  ответе сессии, команда в Auto выполняется без вопроса в своих user/mnt namespaces. Дочерние процессы agy наследуют профиль
+  (`/proc/self/attr/current` = `agy (unconfined)`). Профиль цепляется при запуске — после установки/снятия перезапустить
+  `agy acp` (`kill` его процесса: адаптер поднимет заново).
+- Режим по умолчанию: новый чат и чат без режима в `state.json` — `auto`, если agy его даёт, иначе «Правки без вопросов».
+  До первой сессии в процессе режимы неизвестны — `sandboxLikely()` (снят запрет в ядре или у процесса `agy acp` своя метка
+  AppArmor); после первой сессии — её список. Без профиля (`sudo apparmor_parser -R /etc/apparmor.d/agy && sudo rm …`)
+  всё возвращается к «Правки без вопросов».
 - Нет в ACP, поэтому нет в вебе: форков и откатов (кнопки скрыты, `canBranch` в `lib/format.ts`), остатка лимитов, остановки
   фоновых задач. В терминале тот же разговор — `agy --conversation <id>`.
 - Тестовый экземпляр демона рядом с рабочим: `AGENTD_SOCKET=/tmp/… AGENTD_LOCAL_SOCKET=/tmp/… AGENTD_DATA=/tmp/…
