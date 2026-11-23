@@ -146,15 +146,15 @@ function AgentCards({ agent, onChange, compact }: { agent: AgentKind; onChange: 
           type="button"
           onClick={() => onChange(a)}
           className={cn(
-            'flex min-w-0 items-center gap-2 rounded-xl border px-2.5 text-left transition-colors sm:gap-2.5 sm:px-3',
+            'flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl border px-1.5 text-center transition-colors sm:flex-row sm:justify-start sm:gap-2.5 sm:px-3 sm:text-left',
             compact ? 'h-12' : 'h-14',
             agent === a ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50',
           )}
         >
-          <AgentMark agent={a} className="size-6 text-xs" />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{AGENT_NAME[a]}</span>
-            <span className="block truncate text-[11px] text-muted-foreground">
+          <AgentMark agent={a} className="size-5 text-[11px] sm:size-6 sm:text-xs" />
+          <span className="min-w-0 max-w-full">
+            <span className="block truncate text-[13px] font-medium sm:text-sm">{AGENT_NAME[a]}</span>
+            <span className="hidden truncate text-[11px] text-muted-foreground sm:block">
               <LimitsInline limits={limits} agent={a} />
             </span>
           </span>
@@ -247,7 +247,9 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [newProject, setNewProject] = useState(false);
   const [cwd, setCwd] = useState(initialCwd ?? '');
-  const [agent, setAgent] = useState<AgentKind>(initialAgent ?? ((typeof window !== 'undefined' && (localStorage.getItem('lastAgent') as AgentKind)) || 'claude'));
+  // the last agent comes after mounting: read during render it differs from the server HTML, and React keeps the server's
+  // highlighted card (Claude) while the composer already says «Antigravity»
+  const [agent, setAgent] = useState<AgentKind>(initialAgent ?? 'claude');
   const [settings, setSettings] = useState<ChatSettings>({});
   const [sending, setSending] = useState(false);
   const caps = useCaps(agent, cwd || HOME);
@@ -268,6 +270,10 @@ function NewProjectChat({ initialCwd, initialAgent }: { initialCwd?: string; ini
   useEffect(() => {
     if (initialAgent) setAgent(initialAgent);
   }, [initialAgent]);
+  useEffect(() => {
+    const last = localStorage.getItem('lastAgent') as AgentKind | null;
+    if (!initialAgent && last && AGENTS.includes(last)) setAgent(last);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // model and effort: what was used last time; permissions: always «Авто» (Claude) / «Модель решает» (Codex) —
   // change it in the chip for this chat if needed

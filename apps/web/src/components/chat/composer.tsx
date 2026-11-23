@@ -117,7 +117,9 @@ export function SettingsChips({
   const efforts = model?.efforts ?? [];
   const modes = caps?.permissionModes ?? [];
   const mode = modes.find((m) => m.id === (settings.permissionMode ?? caps?.defaults.permissionMode));
-  const effort = settings.effort ?? model?.defaultEffort ?? caps?.defaults.effort;
+  // a level the picked model does not have is not what runs (Antigravity GPT-OSS: medium only) — show its default
+  const chosen = settings.effort && (!efforts.length || efforts.includes(settings.effort)) ? settings.effort : undefined;
+  const effort = chosen ?? model?.defaultEffort ?? caps?.defaults.effort;
   const modelLabel = model?.label ?? settings.model ?? 'Модель';
   return (
     <>

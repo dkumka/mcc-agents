@@ -379,7 +379,7 @@ export function AppSidebar() {
               <LimitsInline limits={limits} agent={a} />
               {!limits.find((l) => l.agent === a)?.windows.length &&
                 (a === 'antigravity' ? (
-                  <span>{limits.find((l) => l.agent === a)?.plan ?? 'Antigravity'} · остаток лимитов CLI не сообщает</span>
+                  <span className="truncate" title="agy не сообщает остаток лимитов">{limits.find((l) => l.agent === a)?.plan ?? 'Antigravity'} · без счётчика лимитов</span>
                 ) : (
                   <span>лимиты появятся после первого запроса</span>
                 ))}
