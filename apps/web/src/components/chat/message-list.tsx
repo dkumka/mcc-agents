@@ -1,10 +1,11 @@
 'use client';
 
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, Loader2Icon } from 'lucide-react';
 import type { ChatItem, ChatState, ToolItem } from '@mcc-agents/protocol';
-import { FileBase, Markdown, TaskPrompt } from '@/components/markdown';
+import { FileBase, FileHints, Markdown, TaskPrompt } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
+import { pathsNamed } from '@/lib/files';
 import { store } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MessageActions, NoticeLine, ThinkingBlock, ToolCard, UserBubble, isVisible } from './items';
@@ -180,6 +181,13 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
   const firstUserId = useMemo(() => state.items.find((i) => i.kind === 'user')?.id ?? null, [state.items]);
   const anyBusy = busy || state.summary.status === 'waiting';
   const actions = useMemo(() => ({ chatId, firstUserId, busy: anyBusy }), [chatId, firstUserId, anyBusy]);
+  // read on click, so links don't re-render on every streamed item
+  const itemsRef = useRef(state.items);
+  useEffect(() => {
+    itemsRef.current = state.items;
+  }, [state.items]);
+  const cwd = state.summary.cwd;
+  const hints = useCallback((name: string) => pathsNamed(itemsRef.current, name, cwd), [cwd]);
 
   const last = top[top.length - 1];
   const streamingNow = last && ((last.kind === 'assistant' && last.streaming) || (last.kind === 'thinking' && last.streaming));
@@ -193,6 +201,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           store.navigate({ kind: 'new', agent: state.summary.agent, cwd: state.summary.cwd, mode: state.summary.mode ?? 'code', draft });
         }}>
         <FileBase.Provider value={state.summary.cwd}>
+        <FileHints.Provider value={hints}>
         <MessageActions.Provider value={actions}>
         <div ref={content} className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-6 pt-4 md:px-6">
           {top.length === 0 && !busy && <div className="py-16 text-center text-sm text-muted-foreground">Сообщений пока нет</div>}
@@ -205,6 +214,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
           {footer}
         </div>
         </MessageActions.Provider>
+        </FileHints.Provider>
         </FileBase.Provider>
         </TaskPrompt.Provider>
       </div>

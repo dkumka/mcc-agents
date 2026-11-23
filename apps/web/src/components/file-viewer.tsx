@@ -15,11 +15,11 @@ import {
   XIcon,
 } from 'lucide-react';
 import { CodeView } from '@/components/code-view';
-import { CopyButton, WorkspaceActions } from '@/components/markdown';
+import { CopyButton, FileBase, Markdown, WorkspaceActions } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { api } from '@/lib/api';
-import { browserImage, displayName, extOf, fileKind, fmtSize, isIOS, isWorkspace, rawUrl, type FileKind } from '@/lib/files';
+import { api, type Located } from '@/lib/api';
+import { baseName, browserImage, displayName, extOf, fileKind, fmtSize, isIOS, isWorkspace, rawUrl, type FileKind } from '@/lib/files';
 import { ui, useUi, type ViewerFile } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 
@@ -102,34 +102,96 @@ export function FileActions({ path, className }: { path: string; className?: str
   );
 }
 
-type Head = { ok: boolean; status: number; size?: number };
+/** Bigger text files are not previewed at all (the first 1 MB of smaller ones is). */
+const TEXT_MAX = 50 * 1024 * 1024;
 
-function Body({ f, name, kind, head, shareable, onBinary }: { f: ViewerFile; name: string; kind: FileKind; head: Head | null; shareable: boolean; onBinary: () => void }) {
+const tilde = (p: string) => p.replace(/^\/home\/[^/]+/, '~');
+
+function Problem({ title, path, children }: { title: string; path?: string; children?: React.ReactNode }) {
+  return (
+    <Center>
+      <TriangleAlertIcon className="size-8 text-muted-foreground" />
+      <div className="max-w-full space-y-1 px-2">
+        <div className="text-base font-medium">{title}</div>
+        {path && <div className="break-anywhere font-mono text-xs text-muted-foreground select-all">{path}</div>}
+      </div>
+      {children}
+    </Center>
+  );
+}
+
+/** Same-name files to pick from (a bare name with several matches, or suggestions for a missing path). */
+function Matches({ f, matches }: { f: ViewerFile; matches: string[] }) {
+  return (
+    <div className="flex w-full max-w-lg flex-col gap-1 text-left">
+      {matches.map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => ui.openFile({ path: m, hints: f.hints })}
+          className="break-anywhere min-h-10 rounded-md border px-3 py-2 text-left font-mono text-xs hover:bg-muted"
+        >
+          {tilde(m)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LocateProblem({ f, loc }: { f: ViewerFile; loc: Located }) {
+  if (loc.status === 'choose')
+    return (
+      <Problem title={`Нашлось несколько файлов «${baseName(loc.path)}» — какой открыть?`}>
+        <Matches f={f} matches={loc.matches} />
+      </Problem>
+    );
+  if (loc.status === 'not_found')
+    return (
+      <Problem title="Файл не найден:" path={loc.path}>
+        {loc.matches.length > 0 && (
+          <>
+            <div className="text-sm text-muted-foreground">Файлы с таким же именем:</div>
+            <Matches f={f} matches={loc.matches} />
+          </>
+        )}
+      </Problem>
+    );
+  const title = loc.status === 'eacces' ? 'Нет доступа' : loc.status === 'not_file' ? 'Это не файл' : 'Нет доступа: папка вне проектов панели';
+  return <Problem title={title} path={loc.path} />;
+}
+
+/** The text of a file the API refused: same wording as LocateProblem. */
+function textProblem(e: Error, path: string) {
+  if (/не найден|ENOENT/i.test(e.message)) return <Problem title="Файл не найден:" path={path} />;
+  if (/доступ|not allowed|EACCES/i.test(e.message)) return <Problem title="Нет доступа" path={path} />;
+  return <Problem title={`Не удалось открыть файл: ${e.message}`} path={path} />;
+}
+
+function Body({ f, name, kind, size, shareable, onBinary }: { f: ViewerFile; name: string; kind: FileKind; size?: number; shareable: boolean; onBinary: () => void }) {
   const [imgErr, setImgErr] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [zoom, setZoom] = useState(false);
   const [text, setText] = useState<{ content: string; truncated: boolean } | null>(null);
-  const [textErr, setTextErr] = useState<string | null>(null);
+  const [textErr, setTextErr] = useState<Error | null>(null);
+  const [source, setSource] = useState(false);
   const wrap = useUi((s) => s.wrap);
+  const tooLarge = kind === 'text' && (size ?? 0) > TEXT_MAX;
 
   useEffect(() => {
-    if (kind !== 'text') return;
+    if (kind !== 'text' || tooLarge) return;
     api
       .file(f.path)
       .then((r) => (r.binary ? onBinary() : setText({ content: r.content, truncated: r.truncated })))
-      .catch((e: Error) => setTextErr(e.message));
-  }, [kind, f.path, onBinary]);
+      .catch((e: Error) => setTextErr(e));
+  }, [kind, tooLarge, f.path, onBinary]);
 
-  if (head && !head.ok) {
+  if (tooLarge)
     return (
-      <Center>
-        <TriangleAlertIcon className="size-8 text-muted-foreground" />
-        <div className="text-sm text-muted-foreground">
-          {head.status === 404 ? 'Файл не найден — его удалили или переместили.' : head.status === 403 ? 'Этот файл открыть нельзя.' : `Не удалось открыть файл (${head.status}).`}
-        </div>
-      </Center>
+      <Problem title={`Файл слишком большой для просмотра (${fmtSize(size!)})`} path={f.path}>
+        <div className="text-sm text-muted-foreground">Скачайте его кнопкой вверху.</div>
+      </Problem>
     );
-  }
+  if (textErr) return textProblem(textErr, f.path);
 
   if (kind === 'image' && browserImage(name) && !imgErr) {
     return (
@@ -165,11 +227,34 @@ function Body({ f, name, kind, head, shareable, onBinary }: { f: ViewerFile; nam
         <audio src={rawUrl(f.path)} controls preload="metadata" className="w-full max-w-md" />
       </Center>
     );
-  if (kind === 'text' && !textErr) {
+  if (kind === 'text') {
     if (!text) return <Center><Loader2Icon className="size-6 animate-spin text-muted-foreground" /></Center>;
+    const md = /^(md|markdown|mdx)$/.test(extOf(name));
     return (
       <div className="scrollbar-thin h-full overflow-auto py-2">
-        <CodeView code={text.content} path={name} wrap={wrap} />
+        {md && (
+          <div className="flex justify-end gap-1 px-3 pb-1">
+            {(['Просмотр', 'Исходник'] as const).map((l, i) => (
+              <button
+                key={l}
+                type="button"
+                aria-pressed={source === (i === 1)}
+                onClick={() => setSource(i === 1)}
+                className={cn('min-h-10 rounded-md px-3 text-sm', source === (i === 1) ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted')}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+        {md && !source ? (
+          // links inside the document are relative to its folder
+          <FileBase.Provider value={f.path.replace(/\/[^/]*$/, '') || '/'}>
+            <Markdown text={text.content} className="mx-auto max-w-3xl px-4 pb-4 sm:px-6" />
+          </FileBase.Provider>
+        ) : (
+          <CodeView code={text.content} path={name} wrap={wrap} />
+        )}
         {text.truncated && <div className="p-3 text-xs text-muted-foreground">… показан первый 1 МБ — весь файл можно скачать</div>}
       </div>
     );
@@ -183,12 +268,12 @@ function Body({ f, name, kind, head, shareable, onBinary }: { f: ViewerFile; nam
       </div>
       <div className="max-w-full space-y-1 px-4">
         <div className="break-anywhere text-base font-medium">{name}</div>
+        {(kind === 'other' || !TYPE_LABEL[ext]) && <div className="text-sm font-medium">Формат не поддерживается для просмотра</div>}
         <div className="text-sm text-muted-foreground">
           {TYPE_LABEL[ext] ?? (ext ? ext.toUpperCase() : 'Файл')}
-          {head?.size != null ? ` · ${fmtSize(head.size)}` : f.size ? ` · ${fmtSize(f.size)}` : ''}
+          {size != null ? ` · ${fmtSize(size)}` : ''}
         </div>
       </div>
-      {textErr && <div className="text-xs text-destructive">{textErr}</div>}
       <p className="max-w-sm px-6 text-xs text-muted-foreground">
         {shareable
           ? 'Браузер не показывает такие файлы сам. «Поделиться» — открыть в Word, Pages, Excel или Книгах, сохранить в «Файлы», отправить. «Скачать» — в «Загрузки».'
@@ -204,29 +289,33 @@ function Center({ children }: { children: React.ReactNode }) {
 
 function Viewer({ f }: { f: ViewerFile }) {
   const name = f.name || displayName(f.path);
-  const [head, setHead] = useState<Head | null>(null);
+  const [loc, setLoc] = useState<Located | null>(null);
+  const [locErr, setLocErr] = useState<string | null>(null);
   const [binary, setBinary] = useState(false);
   const [shareFile, setShareFile] = useState<File | null>(null);
   const [shareable] = useState(canShareFiles);
 
-  // does it exist, how big is it
+  // does it exist, how big is it; a missing path an agent wrote is looked up by name
   useEffect(() => {
     let off = false;
-    fetch(rawUrl(f.path), { method: 'HEAD', cache: 'no-store' })
+    api
+      .locate(f.path, { cwd: f.cwd, bare: f.bare, hints: f.hints })
       .then((r) => {
         if (off) return;
-        const len = Number(r.headers.get('content-length'));
-        setHead({ ok: r.ok, status: r.status, size: r.ok && Number.isFinite(len) ? len : undefined });
+        // found elsewhere: reopen at the real path (the header and downloads must point at it)
+        if (r.status === 'ok' && r.path !== f.path) return ui.openFile({ ...f, path: r.path, name: undefined, bare: false });
+        setLoc(r);
       })
-      .catch(() => !off && setHead(null));
+      .catch((e: Error) => !off && setLocErr(e.message));
     return () => {
       off = true;
     };
-  }, [f.path]);
+  }, [f]);
+  const ok = loc?.status === 'ok';
 
   // The share sheet must open inside the tap, so the file is fetched beforehand.
   useEffect(() => {
-    if (!shareable || !head?.ok || (head.size ?? f.size ?? 0) > SHARE_MAX) return;
+    if (!shareable || !ok || (loc?.size ?? f.size ?? 0) > SHARE_MAX) return;
     let off = false;
     fetch(rawUrl(f.path))
       .then((r) => (r.ok ? r.blob() : null))
@@ -237,9 +326,9 @@ function Viewer({ f }: { f: ViewerFile }) {
     return () => {
       off = true;
     };
-  }, [shareable, head, f.path, f.size, f.mediaType, name]);
+  }, [shareable, ok, loc?.size, f.path, f.size, f.mediaType, name]);
 
-  const size = head?.size ?? f.size;
+  const size = loc?.size ?? f.size;
   const kind: FileKind = binary ? 'other' : fileKind(name, f.mediaType);
   const onBinary = useCallback(() => setBinary(true), []);
   return (
@@ -253,7 +342,7 @@ function Viewer({ f }: { f: ViewerFile }) {
             <DialogTitle className="truncate text-sm font-medium">{name}</DialogTitle>
             <DialogDescription className="truncate text-[11px] text-muted-foreground" title={f.path}>
               {size != null ? `${fmtSize(size)} · ` : ''}
-              {f.path.replace(/^\/home\/[^/]+/, '~')}
+              {tilde(f.path)}
             </DialogDescription>
           </div>
           <CopyButton text={f.path} className="hidden size-10 justify-center sm:inline-flex" />
@@ -267,7 +356,7 @@ function Viewer({ f }: { f: ViewerFile }) {
               title="Поделиться / сохранить в «Файлы»"
               onClick={() => shareFile && navigator.share({ files: [shareFile], title: name }).catch(() => {})}
             >
-              {shareFile || !head?.ok ? <ShareIcon className="size-5" /> : <Loader2Icon className="size-5 animate-spin" />}
+              {shareFile || !ok ? <ShareIcon className="size-5" /> : <Loader2Icon className="size-5 animate-spin" />}
             </Button>
           )}
           <Button asChild variant="ghost" size="icon" className="size-10 shrink-0" aria-label="Скачать" title="Скачать">
@@ -278,7 +367,15 @@ function Viewer({ f }: { f: ViewerFile }) {
         </div>
       </div>
       <div className="pb-safe min-h-0 flex-1">
-        <Body key={kind} f={f} name={name} kind={kind} head={head} shareable={shareable} onBinary={onBinary} />
+        {locErr ? (
+          <Problem title={`Не удалось проверить файл: ${locErr}`} path={f.path} />
+        ) : !loc ? (
+          <Center><Loader2Icon className="size-6 animate-spin text-muted-foreground" /></Center>
+        ) : !ok ? (
+          <LocateProblem f={f} loc={loc} />
+        ) : (
+          <Body key={kind} f={f} name={name} kind={kind} size={size} shareable={shareable} onBinary={onBinary} />
+        )}
       </div>
     </>
   );

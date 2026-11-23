@@ -12,6 +12,12 @@ export interface ViewerFile {
   mediaType?: string;
   /** Low-res copy we already have (data: URL of a just-sent image) — shown while the original loads. */
   preview?: string;
+  /** Mentioned by an agent: if `path` is missing, look for the same name in this folder… */
+  cwd?: string;
+  /** …and, for a bare name (`README.md`), open the only match. */
+  bare?: boolean;
+  /** Paths with the same name this chat already touched. */
+  hints?: string[];
 }
 
 /** «Форк» dialog: branch `chatId` before the user message `beforeItemId` (whose text goes into the new chat's field). */

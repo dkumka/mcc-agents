@@ -7,6 +7,7 @@ import { config } from './config.ts';
 import { HttpError, gitStatus, listDir, readFile, searchFiles, tailFile } from './fsapi.ts';
 import type { Client, Hub } from './hub.ts';
 import { logger } from './log.ts';
+import { locate } from './locate.ts';
 import { serveRaw } from './raw.ts';
 import { handleUpload, uploadsStats } from './uploads.ts';
 import { handleVoicePost, listVoice } from './voice.ts';
@@ -59,6 +60,12 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
         return json(res, 200, listDir(q.get('path') ?? config.projectRoots[0] ?? config.home));
       case '/api/file':
         return json(res, 200, readFile(q.get('path') ?? ''));
+      case '/api/locate':
+        return json(res, 200, locate(q.get('path') || '/', {
+          cwd: q.get('cwd') || undefined,
+          bare: q.get('bare') === '1',
+          hints: (q.get('hints') ?? '').split('\n').filter(Boolean).slice(0, 50),
+        }));
       case '/api/raw':
         return await serveRaw(req, res, q);
       case '/api/uploads':
@@ -90,7 +97,7 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
         throw new HttpError(404, 'not found');
     }
   } catch (e) {
-    const status = e instanceof HttpError ? e.status : (e as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : 500;
+    const status = e instanceof HttpError ? e.status : (e as NodeJS.ErrnoException).code === 'ENOENT' ? 404 : (e as NodeJS.ErrnoException).code === 'EACCES' ? 403 : 500;
     if (status === 500) log.error(`api ${url.pathname}`, e);
     if (res.headersSent) return void res.destroy();
     json(res, status, { error: (e as Error).message });

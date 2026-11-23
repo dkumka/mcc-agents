@@ -5,7 +5,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { isWorkspace, looksLikeFile, rawUrl as rawUrlFor, resolvePath, workspaceUrl } from '@/lib/files';
+import { baseName, isBareName, isWorkspace, looksLikeFile, rawUrl as rawUrlFor, resolvePath, workspaceUrl } from '@/lib/files';
 import { writingBlocks } from '@/lib/writing-blocks';
 import { taskPrompt } from '@/lib/task-prompt';
 import { ui } from '@/lib/ui';
@@ -13,6 +13,16 @@ import { cn } from '@/lib/utils';
 
 /** Chat folder: paths the agent mentions are resolved against it and become clickable. */
 export const FileBase = createContext<string | null>(null);
+
+/** Paths with a given file name that this chat already touched (see pathsNamed). */
+export const FileHints = createContext<((name: string) => string[]) | null>(null);
+
+/** Open a path the agent wrote; the viewer looks for it by name if it is not where the text says. */
+function useOpenRef() {
+  const cwd = useContext(FileBase);
+  const hints = useContext(FileHints);
+  return (text: string, path: string) => ui.openFile({ path, cwd: cwd ?? undefined, bare: isBareName(text), hints: hints?.(baseName(path)) });
+}
 
 export function WorkspaceActions({ path }: { path: string }) {
   return <span className="inline-flex max-w-full flex-wrap items-center gap-1 align-middle text-xs">
@@ -23,6 +33,7 @@ export function WorkspaceActions({ path }: { path: string }) {
 
 function FilePathCode({ text }: { text: string }) {
   const cwd = useContext(FileBase);
+  const open = useOpenRef();
   const path = cwd && looksLikeFile(text) ? resolvePath(text, cwd) : null;
   if (!path) return <code>{text}</code>;
   if (isWorkspace(path)) return <span><code className="break-anywhere">{text}</code> <WorkspaceActions path={path} /></span>;
@@ -32,8 +43,8 @@ function FilePathCode({ text }: { text: string }) {
       tabIndex={0}
       title={`Открыть ${path}`}
       className="file-link"
-      onClick={() => ui.openFile({ path })}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), ui.openFile({ path }))}
+      onClick={() => open(text, path)}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open(text, path))}
     >
       {text}
     </code>
@@ -42,9 +53,10 @@ function FilePathCode({ text }: { text: string }) {
 
 function LinkOrFile({ href, children }: { href?: string; children?: React.ReactNode }) {
   const cwd = useContext(FileBase);
+  const open = useOpenRef();
+  let target = href ?? '';
   let path: string | null = null;
   if (href && cwd && (href.startsWith('file://') || !/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href))) {
-    let target = href;
     try {
       target = decodeURI(href);
     } catch {}
@@ -57,7 +69,7 @@ function LinkOrFile({ href, children }: { href?: string; children?: React.ReactN
         href={rawUrlFor(path)}
         onClick={(e) => {
           e.preventDefault();
-          ui.openFile({ path });
+          open(target, path);
         }}
         className="file-link"
       >

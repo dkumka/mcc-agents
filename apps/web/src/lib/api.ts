@@ -1,6 +1,14 @@
 import { toLogin } from '@/lib/auth';
 import type { AgentCapabilities, AgentKind, AttachedFile, DirEntry, GitStatus, ProjectInfo, VoiceRecord } from '@mcc-agents/protocol';
 
+/** /api/locate: does a path exist, and which files have the same name if not. */
+export interface Located {
+  path: string;
+  status: 'ok' | 'choose' | 'not_found' | 'forbidden' | 'eacces' | 'not_file';
+  size?: number;
+  matches: string[];
+}
+
 async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, v);
@@ -17,6 +25,8 @@ export const api = {
   files: (cwd: string, q: string) => get<string[]>('files', { cwd, q }),
   ls: (path: string) => get<DirEntry[]>('ls', { path }),
   file: (path: string) => get<{ path: string; content: string; size: number; truncated: boolean; binary: boolean }>('file', { path }),
+  locate: (path: string, o: { cwd?: string; bare?: boolean; hints?: string[] } = {}) =>
+    get<Located>('locate', { path, cwd: o.cwd, bare: o.bare ? '1' : undefined, hints: o.hints?.length ? o.hints.join('\n') : undefined }),
   git: (cwd: string) => get<GitStatus>('git', { cwd }),
   uploads: () => get<{ dir: string; files: number; bytes: number }>('uploads'),
   voice: () => get<{ records: VoiceRecord[]; bytes: number; dir: string }>('voice'),

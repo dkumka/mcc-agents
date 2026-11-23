@@ -1,5 +1,7 @@
 /** Files on the server: URLs for /api/raw and what kind of preview a file gets. */
 
+import type { ChatItem } from '@mcc-agents/protocol';
+
 export type FileKind = 'image' | 'pdf' | 'video' | 'audio' | 'text' | 'office' | 'other';
 
 const EXT: Record<string, FileKind> = {};
@@ -93,12 +95,47 @@ export function resolvePath(raw: string, cwd: string, home?: string): string | n
   return '/' + out.join('/');
 }
 
+const DOMAIN = /^(www\.|[a-z0-9-]+\.)+(com|net|org|io|dev|app|ai|co|me|sh|ru|su|video|xyz|info|cloud|site|online|tech|pro|us|uk|de|eu)$/i;
+
+/** A file name without any folder (`README.md`): it may live anywhere in the project. */
+export function isBareName(s: string): boolean {
+  const t = s.trim().replace(/^file:\/\//, '').replace(/:(\d+)(:\d+)?$/, '');
+  return !!t && !t.includes('/');
+}
+
+/**
+ * Absolute paths named `name` that this chat already touched: Read/Write/Edit inputs, diffs, tool titles and
+ * paths written in messages. Used to find a file the agent later mentions by its bare name.
+ */
+export function pathsNamed(items: readonly ChatItem[], name: string, cwd: string): string[] {
+  const out = new Set<string>();
+  const add = (raw: unknown) => {
+    if (typeof raw !== 'string' || !raw.includes(name)) return;
+    const p = resolvePath(raw, cwd);
+    if (p && baseName(p) === name) out.add(p);
+  };
+  for (const it of items) {
+    if (it.kind === 'tool') {
+      const input = it.input as Record<string, unknown> | null;
+      if (input && typeof input === 'object') for (const k of ['file_path', 'path', 'notebook_path']) add(input[k]);
+      for (const d of it.diffs ?? []) add(d.path);
+      add(it.title);
+    } else if (it.kind === 'assistant' || it.kind === 'user') {
+      if (!it.text.includes(name)) continue;
+      for (const m of it.text.matchAll(/(?:^|[\s(`'"[])((?:~|\/)[^\s()`'"<>[\]]+)/g)) add(m[1].replace(/[.,;:!?]+$/, ''));
+    }
+  }
+  return [...out];
+}
+
 /** Does inline code / a link target look like a file path worth making clickable? */
 export function looksLikeFile(s: string): boolean {
   const t = s.trim().replace(/:(\d+)(:\d+)?$/, '');
   if (t.length < 3 || t.length > 300 || /\s/.test(t) || (/^[a-z]+:\/\//i.test(t) && !t.startsWith('file://'))) return false;
   if (!/\.(?:[A-Za-z0-9]{1,8}|code-workspace)$/.test(t)) return false; // needs an extension
   if (/^(\/|~\/|\.\.?\/|file:\/\/)/.test(t)) return true;
+  // a URL without a scheme: `github.com/x/README.md`, `www.site.ru/a.html`
+  if (DOMAIN.test(t.split('/')[0])) return false;
   if (t.includes('/')) return /^[\w.@+-]+(\/[\w.@+ -]+)+$/.test(t);
   // a bare name: only for typical "here is your file" extensions (not `foo.bar()` or `v1.2`)
   return /^[\w.@+-]+\.(code-workspace|docx?|xlsx?|pptx?|pdf|csv|tsv|zip|tar|gz|png|jpe?g|gif|webp|svg|mp4|mov|mp3|wav|txt|md|json|html?|log)$/i.test(t);

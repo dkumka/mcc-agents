@@ -16,8 +16,17 @@ function run(cmd: string, args: string[], cwd: string, maxBuffer = 8 * 1024 * 10
 export function check(p: string | null | undefined): string {
   if (!p) throw new HttpError(400, 'path required');
   const abs = path.resolve(p);
-  if (!allowedPath(abs)) throw new HttpError(403, 'path not allowed');
-  return fs.realpathSync(abs);
+  let real: string;
+  try {
+    real = fs.realpathSync(abs);
+  } catch (e) {
+    // a missing file is "not found", not "not allowed" (allowedPath() is false for anything that does not exist)
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'EACCES' || code === 'EPERM') throw new HttpError(403, 'нет доступа');
+    throw new HttpError(404, 'файл не найден');
+  }
+  if (!allowedPath(real)) throw new HttpError(403, 'path not allowed');
+  return real;
 }
 
 export class HttpError extends Error {

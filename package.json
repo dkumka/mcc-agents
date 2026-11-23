@@ -14,6 +14,7 @@
     "build:web": "npm run build -w apps/web",
     "start:agentd": "node apps/agentd/src/index.ts",
     "typecheck": "tsc -p apps/agentd --noEmit && tsc -p packages/protocol --noEmit && npm run typecheck -w apps/web",
-    "lint": "npm run lint -w apps/web"
+    "lint": "npm run lint -w apps/web",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/*.test.ts"
   }
 }
