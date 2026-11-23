@@ -820,6 +820,10 @@ export class AntigravityAdapter implements Adapter {
       }
     }
     if (!windows.length) throw new Error('agy /usage: нет окон');
+    // as with Claude / Codex: «5 часов» before «Неделя» within a group (agy lists the week first); groups keep their order
+    const order = [...new Set(windows.map((w) => w.groupId))];
+    const rank = (w: LimitWindow) => order.indexOf(w.groupId) * 10 + (w.label === '5 часов' ? 0 : 1);
+    windows.sort((x, y) => rank(x) - rank(y));
     this.publishLimits(windows);
     log.info(`usage: ${windows.map((w) => `${w.group} ${w.label} ${w.usedPercent}%`).join(', ')}`);
   }

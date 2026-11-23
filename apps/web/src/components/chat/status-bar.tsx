@@ -55,7 +55,9 @@ export function LimitsInline({ limits, agent, model, className }: { limits: Agen
   if (!l || !l.windows.length) return null;
   const grouped = l.windows.some((w) => w.groupId);
   const gid = grouped ? ((model && l.windows.find((w) => w.models?.includes(model))?.groupId) ?? l.windows[0].groupId) : undefined;
-  const shown = grouped ? l.windows.filter((w) => w.groupId === gid) : l.windows;
+  // «5 часов» before «Неделя», as for Claude / Codex
+  const five = (w: LimitWindow) => (w.label === '5 часов' ? 0 : 1);
+  const shown = grouped ? l.windows.filter((w) => w.groupId === gid).sort((a, b) => five(a) - five(b)) : l.windows;
   const groups = grouped ? [...new Set(l.windows.map((w) => w.groupId))].sort((a, b) => (a === gid ? -1 : b === gid ? 1 : 0)) : [];
   const fine = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   const enter = () => {
@@ -101,7 +103,7 @@ export function LimitsInline({ limits, agent, model, className }: { limits: Agen
         </div>
         {grouped
           ? groups.map((g) => {
-              const ws = l.windows.filter((w) => w.groupId === g);
+              const ws = l.windows.filter((w) => w.groupId === g).sort((a, b) => five(a) - five(b));
               return (
                 <div key={g} className="space-y-2">
                   <div className="font-medium text-foreground">
