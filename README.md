@@ -36,8 +36,9 @@ ssh serzhb@94.131.82.220 '~/dev/mcc-agents/scripts/deploy.sh --local'   # соб
 ```
 
 Боевое обновление — через GitHub: коммит → `git push` → на сервере `scripts/deploy.sh` (подтянет `origin/main`,
-`npm install` при смене зависимостей, `next build`, перезапуск веба; демон — только если менялись `apps/agentd` или
-`packages/protocol`, и не при занятых чатах — иначе `--force`).
+`npm install` при смене зависимостей, `next build`, перезапуск веба; демон — только если `apps/agentd` или
+`packages/protocol` изменились с коммита, с которого он запущен (`.git/mcc-deploy/agentd`), и не при занятых чатах — иначе
+`--force`; отложенный перезапуск следующий `deploy.sh` не забудет).
 
 Тест без входа (например, из iOS Simulator на Mac): `ssh -N -L 3119:/run/mcc-agents/local.sock serzhb@94.131.82.220`
 → http://localhost:3119. Сокет `local.sock` доступен только пользователю `serzhb`.
