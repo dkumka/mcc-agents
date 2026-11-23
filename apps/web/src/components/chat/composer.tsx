@@ -83,6 +83,12 @@ const MODE_SHORT: Record<string, string> = {
   never: 'Без вопр.',
 };
 
+/** Phone, Antigravity: «Gemini 4 Neon» → «4 Neon», «GPT-OSS 120B» → «OSS 120B», «Orchestrator (Neon)» → «Orch. Neon». */
+function shortModel(label: string, short?: boolean) {
+  if (!short) return label;
+  return label.replace(/^(Gemini|Claude) /, '').replace(/^GPT-OSS /, 'OSS ').replace(/^Orchestrator \((.+)\)$/, 'Orch. $1');
+}
+
 function Chip({ icon: Icon, children, className, compact, ...p }: React.ComponentProps<'button'> & { icon: typeof CpuIcon; compact?: boolean }) {
   return (
     <button
@@ -126,7 +132,7 @@ export function SettingsChips({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Chip icon={CpuIcon} compact={compact} aria-label={`Модель: ${modelLabel}`}>
-            {modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1')}
+            {shortModel(modelLabel.replace(/^По умолчанию \((.+)\)$/, '$1'), compact && caps?.agent === 'antigravity')}
           </Chip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-[60vh] w-72 overflow-y-auto">

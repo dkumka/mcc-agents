@@ -7,7 +7,8 @@
    └── /api/*, /ws  → unix:/run/mcc-agents/agentd.sock  mcc-agentd
                                    │
                                    ├── claude -p --input-format stream-json … (процесс на активный чат)
-                                   └── codex app-server (один на все треды, JSON-RPC по stdio)
+                                   ├── codex app-server (один на все треды, JSON-RPC по stdio)
+                                   └── agy acp (Antigravity, один на все сессии, ACP — JSON-RPC 2.0 по stdio)
 ```
 
 Почему демон отдельно от Next: процессы агентов должны жить, пока идёт работа (фоновая задача Claude живёт внутри
@@ -30,6 +31,8 @@
 | `claude/index.ts` | `ClaudeProc` (процесс на чат) и `ClaudeAdapter` |
 | `codex/rpc.ts` | клиент `codex app-server` (JSON-RPC, автоперезапуск) |
 | `codex/index.ts` | `CodexAdapter`: треды, история (`thread/turns/list`, itemsView full), события, подтверждения |
+| `antigravity/acp.ts` | клиент `agy acp` (Agent Client Protocol: JSON-RPC 2.0, NDJSON по stdio; запуск по первому запросу, автоперезапуск после падения) |
+| `antigravity/index.ts` | `AntigravityAdapter`: сессии, история (replay `session/load`), события `session/update`, подтверждения |
 
 ### Claude
 
@@ -70,6 +73,44 @@
   `turn/plan/updated` (→ список задач), `thread/tokenUsage/updated` (контекст), `account/rateLimits/updated` (лимиты).
 - `clientUserMessageId` = наш id сообщения → своё сообщение не дублируется.
 - `/compact` → `thread/compact/start`. Картинки → `uploads/<uuid>.<ext>` → `localImage`.
+
+### Antigravity (`agy`, с 2026-11-23)
+
+- Официальный штатный режим для внешних клиентов — **`agy acp`**: сервер Agent Client Protocol, через который к агенту
+  подключаются Zed и JetBrains. `clientInfo.name` = `mcc_agents`; клиент не даёт агенту ни `fs/*`, ни `terminal/*` —
+  файлы и команды агент делает сам, как в терминале. Вход — собственный Google-вход CLI (`agy` в терминале), токены оболочка
+  не читает. Бинарник — `~/.local/bin/agy` (`AGY_BIN`), обновляется сам.
+- Один процесс на все сессии. `session/list` — список (cwd, название, `updatedAt`; признака «из веба» нет — его даёт
+  `state.json`). `session/load` — открыть: история приходит повтором `session/update` до ответа (элементы кладутся молча),
+  ответ — модели, режимы, `configOptions`, тариф (`_meta.antigravity.tier`, «Google AI Pro» → внизу левой панели).
+  `session/new {cwd}` — новый чат, `session/close` — отпустить простаивающий (`sweep`, как треды Codex).
+- Ход — `session/prompt` (без таймаута). **Дополнение посреди хода** — ещё один `session/prompt`: agy подмешивает его в текущий
+  ход, а предыдущий запрос сразу возвращается с `end_turn`. Поэтому ход кончается, когда вернулся *последний* запрос
+  (счётчик `inflight`). Проверено: «…ответь FIRST» + посреди хода «добавь SECOND» → один ответ «FIRST SECOND».
+- «Стоп» — уведомление `session/cancel`; висящие запросы разрешений получают ответ `cancelled` (так требует ACP); запрос
+  возвращается с `stopReason: cancelled` → «Прервано». Если агент 8 с молчит — чат всё равно освобождается.
+- События `session/update`: `agent_message_chunk` / `agent_thought_chunk` (подряд идущие куски — один элемент),
+  `tool_call` + `tool_call_update` (сливаются по `toolCallId`; `kind` → категория карточки; `content.diff` → diff,
+  у `execute` из вывода убирается шапка «Created At … Command output:»), `plan` → список задач, `usage_update` → контекст,
+  `session_info_update` → название, `available_commands_update` → слэш-команды, `current_mode_update`, `config_option_update`.
+- Долгие команды agy сам уводит в фон и заканчивает ход — карточка остаётся «выполняется», пока не придёт её завершение.
+  Когда фоновая задача кончается, agy может сам продолжить разговор между ходами: такие события показываются, чат поднимается
+  в списке и становится непрочитанным, статус не меняется (конца такого «хода» ACP не сообщает).
+- Подтверждения: запрос агента `session/request_permission {toolCall, options}`. `execute` → карточка команды, `edit` →
+  правка с diff. Ответ — `optionId` нужного `kind` (`allow_once` / `allow_always` / `reject_once`). Комментарий к «Отклонить»
+  уходит агенту следующим `session/prompt` (дополнение в тот же ход).
+- Модели: `availableModels` вида `gemini-4-neon-high` → модель `gemini-4-neon` + глубина `high` (у Orchestrator глубины нет,
+  у GPT-OSS — только `medium`); выбор — `session/set_model` с полным id. До первой сессии в процессе список берётся из
+  `agy models`. Режимы — `session/set_mode`: `default` «Спрашивать», `accept-edits` «Правки без вопросов», `plan` «План».
+- **Режима Auto нет** — agy включает его только при своей песочнице для команд, а на сервере её не пускает AppArmor
+  (`kernel.apparmor_restrict_unprivileged_userns = 1`, в журнале agy: «auto mode is unavailable because the terminal sandbox
+  is unavailable»). Поэтому по умолчанию — «Правки без вопросов» (команды спрашиваются). Если Auto появится (профиль AppArmor
+  для agy), адаптер возьмёт его сам: режимы берутся из ответа сессии, `auto` → по умолчанию.
+- Нет в ACP, поэтому нет в вебе: форков и откатов (кнопки скрыты, `canBranch` в `lib/format.ts`), остатка лимитов, остановки
+  фоновых задач. В терминале тот же разговор — `agy --conversation <id>`.
+- Тестовый экземпляр демона рядом с рабочим: `AGENTD_SOCKET=/tmp/… AGENTD_LOCAL_SOCKET=/tmp/… AGENTD_DATA=/tmp/…
+  AGENTD_NOTIFY=0 AGENTD_TELEGRAM=0` (без последнего два демона дерутся за опрос Telegram-бота) и PATH с `~/.npm-global/bin`
+  (иначе не найдётся `codex`); сквозной тест — `scripts/e2e.mjs <сокет> antigravity <папка>`.
 
 ## Режимы «Чат» и «Код»
 

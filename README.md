@@ -1,13 +1,15 @@
 # mcc agents
 
-Личная веб-оболочка над официальными CLI **Claude Code** (`claude`) и **Codex** (`codex`) на сервере разработки `mcc`.
+Личная веб-оболочка над официальными CLI **Claude Code** (`claude`), **Codex** (`codex`) и **Antigravity** (`agy`) на сервере
+разработки `mcc`.
 Адрес: **https://agents.mcc.babochkin.com**. Вход — общей формой https://auth.mcc.babochkin.com (сервис `mcc-auth` из репозитория
 `mcc-server`, cookie на все `*.mcc.babochkin.com`; логин и пароль — прежние, `/etc/nginx/code.htpasswd`).
 
-- Без SDK: запускаются сами CLI в их штатных режимах — `claude -p` (stream-json + control-протокол) и `codex app-server` (JSON-RPC).
-  Вход — собственный OAuth каждого CLI (`claude` / `codex login --device-auth` по SSH), токены оболочка не трогает.
-- Сессии **общие с терминалом**: те же файлы `~/.claude/projects/…` и `~/.codex/sessions/…`. Веб-чаты видны в
-  `claude --resume` / `codex resume`, терминальные — в вебе.
+- Без SDK: запускаются сами CLI в их штатных режимах — `claude -p` (stream-json + control-протокол), `codex app-server`
+  (JSON-RPC) и `agy acp` (Agent Client Protocol). Вход — собственный вход каждого CLI (`claude` / `codex login --device-auth` /
+  `agy` по SSH), токены оболочка не трогает.
+- Сессии **общие с терминалом**: те же файлы `~/.claude/projects/…`, `~/.codex/sessions/…`, `~/.gemini/antigravity-cli/…`.
+  Веб-чаты видны в `claude --resume` / `codex resume` / `agy --conversation <id>`, терминальные — в вебе.
 - Интерфейс в духе Claude Code: слева проекты и чаты, по центру чат с карточками инструментов, справа — изменения git,
   файлы, фоновые задачи. Светлая/тёмная тема, нормальная мобильная версия.
 
@@ -24,8 +26,8 @@ docs/            ARCHITECTURE.md — как устроено, STATUS.md — чт
 
 ## Разработка
 
-Код пишется где угодно, но **запускается только на сервере** — там залогинены `claude`/`codex` и лежат сессии.
-На Mac `claude`/`codex` и Node для этого проекта не запускаем.
+Код пишется где угодно, но **запускается только на сервере** — там залогинены `claude`/`codex`/`agy` и лежат сессии.
+На Mac `claude`/`codex`/`agy` и Node для этого проекта не запускаем.
 
 ```bash
 scripts/sync.sh                     # Mac → ~/dev/mcc-agents на сервере (rsync); если там ровно origin/main — git тоже туда (git-align.sh)
@@ -40,7 +42,9 @@ ssh serzhb@94.131.82.220 '~/dev/mcc-agents/scripts/deploy.sh --local'   # соб
 Тест без входа (например, из iOS Simulator на Mac): `ssh -N -L 3119:/run/mcc-agents/local.sock serzhb@94.131.82.220`
 → http://localhost:3119. Сокет `local.sock` доступен только пользователю `serzhb`.
 
-Сквозной тест протокола (на сервере, тратит немного лимита): `node scripts/e2e.mjs /run/mcc-agents/local.sock claude /tmp/agent-spike/proj haiku`.
+Сквозной тест протокола (на сервере, тратит немного лимита): `node scripts/e2e.mjs /run/mcc-agents/local.sock claude /tmp/agent-spike/proj haiku`
+(агент — `claude` / `codex` / `antigravity`; для Antigravity по умолчанию Gemini 3.8 Flash). Тестовый экземпляр демона рядом с
+рабочим — см. ARCHITECTURE, раздел Antigravity (`AGENTD_TELEGRAM=0`).
 
 ## Сервисы на сервере
 
