@@ -1,6 +1,7 @@
 /** Files on the server: URLs for /api/raw and what kind of preview a file gets. */
 
 import type { ChatItem } from '@mcc-agents/protocol';
+import { defaultUrlTransform } from 'react-markdown';
 
 export type FileKind = 'image' | 'pdf' | 'video' | 'audio' | 'text' | 'office' | 'other';
 
@@ -128,6 +129,43 @@ export function pathsNamed(items: readonly ChatItem[], name: string, cwd: string
   return [...out];
 }
 
+/** The path as written when it is relative (`models/partner.js`), for the lookup in the chat's repositories. */
+export function relOf(raw: string): string | undefined {
+  const t = raw.trim().replace(/^file:\/\//, '').replace(/:(\d+)(:\d+)?$/, '').replace(/^(\.\/)+/, '');
+  return t && !t.startsWith('/') && !t.startsWith('~') ? t : undefined;
+}
+
+const unquote = (s: string) => s.replace(/^(["'])(.*)\1$/, '$2');
+
+/**
+ * Paths this chat touched, newest first: tool inputs (file_path, path, Antigravity Path/TargetFile…), diffs, command
+ * folders (Codex cwd, `cd X`, `git -C X`). The server turns them into git roots to look relative paths up in.
+ */
+export function touchedPaths(items: readonly ChatItem[], cwd: string, max = 30): string[] {
+  const out: string[] = [];
+  const add = (raw: unknown, base = cwd) => {
+    if (typeof raw !== 'string' || !raw || raw.length > 500 || out.length >= max) return;
+    const p = resolvePath(unquote(raw), base);
+    if (p && !out.includes(p)) out.push(p);
+  };
+  for (let i = items.length - 1; i >= 0 && out.length < max; i--) {
+    const it = items[i];
+    if (it.kind !== 'tool') continue;
+    for (const d of it.diffs ?? []) add(d.path);
+    const input = it.input as Record<string, unknown> | null;
+    if (!input || typeof input !== 'object') continue;
+    for (const k of ['file_path', 'path', 'notebook_path', 'Path', 'TargetFile', 'AbsolutePath', 'DirectoryPath', 'SearchPath']) add(input[k]);
+    const dir = typeof input.cwd === 'string' ? input.cwd : typeof input.Cwd === 'string' ? input.Cwd : undefined;
+    add(dir);
+    const cmd = input.command ?? input.CommandLine;
+    const text = Array.isArray(cmd) ? cmd.join(' ') : typeof cmd === 'string' ? cmd : '';
+    const base = dir ? (resolvePath(dir, cwd) ?? cwd) : cwd;
+    for (const m of text.matchAll(/(?:^|[\s;&|(])(?:cd|pushd)\s+("[^"]+"|'[^']+'|[^\s;&|)]+)/g)) add(m[1], base);
+    for (const m of text.matchAll(/\bgit\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|)]+)/g)) add(m[1], base);
+  }
+  return out;
+}
+
 /** Does inline code / a link target look like a file path worth making clickable? */
 export function looksLikeFile(s: string): boolean {
   const t = s.trim().replace(/:(\d+)(:\d+)?$/, '');
@@ -147,4 +185,15 @@ export function isWorkspace(path: string): boolean {
 
 export function workspaceUrl(path: string): string {
   return `https://vscode.mcc.klemid.ru/?${new URLSearchParams({ workspace: path })}`;
+}
+
+/**
+ * Link URLs for react-markdown. Its default drops every scheme but http(s)/mailto/irc/xmpp, so `file://` links and
+ * `README.md:12` came out as an empty href (a click opened the page itself in a new tab). Those are kept: LinkOrFile
+ * opens them in the viewer and never puts them into the page as they are.
+ */
+export function linkUrl(url: string): string {
+  if (/^file:\/\//i.test(url)) return url;
+  if (looksLikeFile(url) && !url.replace(/:(\d+)(:\d+)?$/, '').includes(':')) return url;
+  return defaultUrlTransform(url);
 }

@@ -20,6 +20,11 @@ export const config = {
   /** Antigravity CLI — the official installer puts it into ~/.local/bin (not always on the service's PATH). */
   agyBin: process.env.AGY_BIN ?? path.join(home, '.local/bin/agy'),
   claudeProjects: path.join(home, '.claude/projects'),
+  /**
+   * Agents' own files the viewer may show: Antigravity artifacts (brain/<conversation>/: plans, tasks, walkthroughs) and
+   * Claude plans. Only these folders: ~/.gemini/antigravity-cli itself holds the CLI's login.
+   */
+  readRoots: [path.join(home, '.gemini/antigravity-cli/brain'), path.join(home, '.claude/plans')],
   /** Conversations outside projects ("Чат" mode): one folder per chat inside. */
   chatRoot: process.env.AGENTD_CHAT_ROOT ?? path.join(home, 'chat'),
   /** Folders whose sub-folders are offered as projects. */
@@ -48,7 +53,7 @@ export function allowedPath(p: string): boolean {
   } catch {
     return false;
   }
-  const roots = [...config.projectRoots, config.chatRoot, path.join(config.dataDir, 'uploads')];
+  const roots = [...config.projectRoots, config.chatRoot, path.join(config.dataDir, 'uploads'), ...config.readRoots];
   const inRoot = roots.some((root) => {
     const allowed = path.resolve(root);
     return resolved === allowed || resolved.startsWith(allowed + '/');

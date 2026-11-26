@@ -141,7 +141,11 @@ function Matches({ f, matches }: { f: ViewerFile; matches: string[] }) {
 function LocateProblem({ f, loc }: { f: ViewerFile; loc: Located }) {
   if (loc.status === 'choose')
     return (
-      <Problem title={`Нашлось несколько файлов «${baseName(loc.path)}» — какой открыть?`}>
+      <Problem
+        title={loc.matches.includes(loc.path)
+          ? `«${baseName(loc.path)}» есть и в папке чата, и в worktree, где работал агент, с разным содержимым — какой открыть?`
+          : `Нашлось несколько файлов «${baseName(loc.path)}» — какой открыть?`}
+      >
         <Matches f={f} matches={loc.matches} />
       </Problem>
     );
@@ -284,7 +288,7 @@ function Body({ f, name, kind, size, shareable, onBinary }: { f: ViewerFile; nam
 }
 
 function Center({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full flex-col items-center justify-center gap-3 overflow-auto p-6 text-center">{children}</div>;
+  return <div className="flex h-full flex-col items-center justify-center-safe gap-3 overflow-auto p-6 text-center">{children}</div>;
 }
 
 function Viewer({ f }: { f: ViewerFile }) {
@@ -299,11 +303,11 @@ function Viewer({ f }: { f: ViewerFile }) {
   useEffect(() => {
     let off = false;
     api
-      .locate(f.path, { cwd: f.cwd, bare: f.bare, hints: f.hints })
+      .locate(f.path, { cwd: f.cwd, bare: f.bare, hints: f.hints, touched: f.touched, rel: f.rel })
       .then((r) => {
         if (off) return;
         // found elsewhere: reopen at the real path (the header and downloads must point at it)
-        if (r.status === 'ok' && r.path !== f.path) return ui.openFile({ ...f, path: r.path, name: undefined, bare: false });
+        if (r.status === 'ok' && r.path !== f.path) return ui.openFile({ ...f, path: r.path, name: undefined, bare: false, rel: undefined });
         setLoc(r);
       })
       .catch((e: Error) => !off && setLocErr(e.message));

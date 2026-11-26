@@ -18,6 +18,10 @@ export interface ViewerFile {
   bare?: boolean;
   /** Paths with the same name this chat already touched. */
   hints?: string[];
+  /** Paths the chat touched, newest first: their repositories are where a relative path is tried next. */
+  touched?: string[];
+  /** The path as written, when relative (`models/partner.js`). */
+  rel?: string;
 }
 
 /** «Форк» dialog: branch `chatId` before the user message `beforeItemId` (whose text goes into the new chat's field). */

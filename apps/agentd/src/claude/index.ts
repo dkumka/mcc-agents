@@ -1,4 +1,4 @@
-import { TASK_PROMPT_INSTRUCTIONS } from '../task-prompt.ts';
+import { AGENT_INSTRUCTIONS } from '../task-prompt.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -130,7 +130,7 @@ class ClaudeProc {
     const args = [
       ...BASE_ARGS,
       '--allow-dangerously-skip-permissions',
-      '--append-system-prompt', TASK_PROMPT_INSTRUCTIONS,
+      '--append-system-prompt', AGENT_INSTRUCTIONS,
       '--include-partial-messages',
       '--permission-prompt-tool',
       'stdio',

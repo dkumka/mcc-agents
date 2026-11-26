@@ -7,7 +7,7 @@ import { test } from 'node:test';
 
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'locate-')));
 process.env.AGENTD_PROJECT_ROOTS = root;
-const { locate } = await import('../apps/agentd/src/locate.ts');
+const { gitRoots, locate } = await import('../apps/agentd/src/locate.ts');
 
 const cwd = path.join(root, 'supa');
 const put = (rel: string, body = 'x') => {
@@ -71,4 +71,71 @@ test('folders, files outside the roots and unreadable files are told apart', () 
     fs.chmodSync(path.join(cwd, 'secret.md'), 0);
     assert.equal(locate(path.join(cwd, 'secret.md')).status, 'eacces');
   }
+});
+
+// a multi-repo folder: two repositories and a worktree of one of them
+const repo = (rel: string, worktree = false) => {
+  fs.mkdirSync(path.join(cwd, rel), { recursive: true });
+  if (worktree) fs.writeFileSync(path.join(cwd, rel, '.git'), 'gitdir: /x');
+  else fs.mkdirSync(path.join(cwd, rel, '.git'), { recursive: true });
+};
+repo('supa-api');
+repo('supa-nest');
+repo('worktrees/pptx-recheck/supa-nest', true);
+put('supa-api/models/partner.js', 'api');
+put('supa-nest/models/partner.js', 'nest');
+put('supa-nest/libs/pptx/index.js', 'main');
+put('worktrees/pptx-recheck/supa-nest/libs/pptx/index.js', 'worktree');
+put('supa-nest/libs/same.js', 'same');
+put('worktrees/pptx-recheck/supa-nest/libs/same.js', 'same');
+put('supa-api/src/deep/b/c/only-here.ts');
+const wt = path.join(cwd, 'worktrees/pptx-recheck/supa-nest');
+const at = (rel: string) => path.join(cwd, rel);
+
+test('git roots of touched paths: nearest .git folder or worktree file, newest first, no repeats', () => {
+  assert.deepEqual(gitRoots([at('worktrees/pptx-recheck/supa-nest/libs/pptx/index.js'), at('supa-api/models'), at('supa-api'), at('a/README.md')]), [wt, at('supa-api')]);
+});
+
+test('a path relative to its repository opens from the repository the chat touched', () => {
+  const r = locate(at('models/partner.js'), { cwd, rel: 'models/partner.js', touched: [at('supa-api/models/partner.js')] });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.path, at('supa-api/models/partner.js'));
+});
+
+test('without touched repositories, the repositories of the chat folder are tried and several give a choice', () => {
+  const r = locate(at('models/partner.js'), { cwd, rel: 'models/partner.js' });
+  assert.equal(r.status, 'choose');
+  assert.deepEqual(r.matches, [at('supa-api/models/partner.js'), at('supa-nest/models/partner.js')]);
+  // the recently touched one goes on top
+  const both = locate(at('models/partner.js'), { cwd, rel: 'models/partner.js', touched: [at('supa-nest'), at('supa-api')] });
+  assert.equal(both.status, 'choose');
+  assert.deepEqual(both.matches, [at('supa-nest/models/partner.js'), at('supa-api/models/partner.js')]);
+});
+
+test('a worktree the agent worked in is not silently replaced by the main checkout', () => {
+  const r = locate(at('supa-nest/libs/pptx/index.js'), { cwd, rel: 'supa-nest/libs/pptx/index.js', touched: [path.join(wt, 'libs/pptx/index.js')] });
+  assert.equal(r.status, 'choose');
+  assert.deepEqual(r.matches, [path.join(wt, 'libs/pptx/index.js'), at('supa-nest/libs/pptx/index.js')]);
+  // same content: nothing to choose
+  assert.equal(locate(at('supa-nest/libs/same.js'), { cwd, rel: 'supa-nest/libs/same.js', touched: [wt] }).status, 'ok');
+  // no worktree in this chat: the file from the chat folder opens as before
+  assert.equal(locate(at('supa-nest/libs/pptx/index.js'), { cwd, rel: 'supa-nest/libs/pptx/index.js' }).status, 'ok');
+});
+
+test('a relative path missing everywhere above is matched by its tail, not only by its name', () => {
+  put('x/models/only-here.ts', 'other');
+  const r = locate(at('c/only-here.ts'), { cwd, rel: 'c/only-here.ts' });
+  assert.equal(r.status, 'not_found'); // too deep for the walk from cwd; x/models/only-here.ts has the name but not the tail
+  assert.deepEqual(r.matches, [at('x/models/only-here.ts')]);
+  const t = locate(at('b/c/only-here.ts'), { cwd, rel: 'b/c/only-here.ts', touched: [at('supa-api')] });
+  assert.equal(t.status, 'ok');
+  assert.equal(t.path, at('supa-api/src/deep/b/c/only-here.ts'));
+});
+
+test('a bare name is tried at the root of the touched repositories', () => {
+  put('supa-nest/NEST-ONLY.md');
+  put('a/NEST-ONLY.md');
+  const r = locate(at('NEST-ONLY.md'), { cwd, bare: true, touched: [at('supa-nest/libs')] });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.path, at('supa-nest/NEST-ONLY.md'));
 });

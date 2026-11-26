@@ -25,6 +25,10 @@ import { logger } from '../log.ts';
 import { store } from '../store.ts';
 import { splitFiles } from '../uploads.ts';
 import { AcpServer } from './acp.ts';
+import { AGENT_INSTRUCTIONS } from '../task-prompt.ts';
+
+/** ACP has no system prompt; agy appends this one when it comes as `_meta.antigravity.systemPrompt.append` (new and loaded sessions). */
+const SYSTEM_META = { antigravity: { systemPrompt: { append: AGENT_INSTRUCTIONS } } };
 
 const log = logger('antigravity');
 type Json = Record<string, any>;
@@ -380,7 +384,7 @@ export class AntigravityAdapter implements Adapter {
     chat.resetItems([]);
     let r: Json;
     try {
-      r = await this.acp.request('session/load', { sessionId: sid, cwd: chat.cwd || config.home, mcpServers: [] }, 180_000);
+      r = await this.acp.request('session/load', { sessionId: sid, cwd: chat.cwd || config.home, mcpServers: [], _meta: SYSTEM_META }, 180_000);
       // the replay may go on after the answer (seen 2026-11-23: the last answer came ~0.3 s later, became a «live» item
       // stuck in «пишет…» and lifted the chat as unread) — stay in replay until the session has been quiet for a moment
       const until = Date.now() + 5000;
@@ -413,7 +417,7 @@ export class AntigravityAdapter implements Adapter {
   // ------------------------------------------------------------ actions
 
   async prepare(cwd: string, settings: ChatSettings): Promise<string> {
-    const r: Json = await this.acp.request('session/new', { cwd, mcpServers: [] }, 120_000);
+    const r: Json = await this.acp.request('session/new', { cwd, mcpServers: [], _meta: SYSTEM_META }, 120_000);
     const sid = r?.sessionId;
     if (!sid) throw new Error('Antigravity не создал сессию');
     this.absorb(sid, r);

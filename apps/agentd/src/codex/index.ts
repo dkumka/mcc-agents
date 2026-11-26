@@ -1,4 +1,4 @@
-import { TASK_PROMPT_INSTRUCTIONS } from '../task-prompt.ts';
+import { AGENT_INSTRUCTIONS } from '../task-prompt.ts';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -285,7 +285,7 @@ export class CodexAdapter implements Adapter {
     const meta = store.meta(chat.id);
     const permissionMode = meta.settings?.permissionMode ?? 'on-request';
     const { sandbox, approvalPolicy } = codexPermissions(permissionMode);
-    const r: Json = await this.rpc.request('thread/resume', { threadId: tid, developerInstructions: TASK_PROMPT_INSTRUCTIONS, excludeTurns: true, sandbox, approvalPolicy }, 60_000);
+    const r: Json = await this.rpc.request('thread/resume', { threadId: tid, developerInstructions: AGENT_INSTRUCTIONS, excludeTurns: true, sandbox, approvalPolicy }, 60_000);
     this.loaded.add(tid);
     chat.state.settings = {
       model: meta.settings?.model ?? r?.model ?? undefined,
@@ -322,7 +322,7 @@ export class CodexAdapter implements Adapter {
   async prepare(cwd: string, settings: ChatSettings): Promise<string> {
     const { sandbox, approvalPolicy } = codexPermissions(settings.permissionMode);
     const r: Json = await this.rpc.request('thread/start', {
-      developerInstructions: TASK_PROMPT_INSTRUCTIONS,
+      developerInstructions: AGENT_INSTRUCTIONS,
       cwd,
       model: settings.model || null,
       approvalPolicy,

@@ -5,7 +5,8 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { CheckIcon, CopyIcon } from 'lucide-react';
-import { baseName, isBareName, isWorkspace, looksLikeFile, rawUrl as rawUrlFor, resolvePath, workspaceUrl } from '@/lib/files';
+import { api, type Located, type LocateQuery } from '@/lib/api';
+import { baseName, isBareName, isWorkspace, linkUrl, looksLikeFile, rawUrl as rawUrlFor, relOf, resolvePath, workspaceUrl } from '@/lib/files';
 import { writingBlocks } from '@/lib/writing-blocks';
 import { taskPrompt } from '@/lib/task-prompt';
 import { ui } from '@/lib/ui';
@@ -14,14 +15,59 @@ import { cn } from '@/lib/utils';
 /** Chat folder: paths the agent mentions are resolved against it and become clickable. */
 export const FileBase = createContext<string | null>(null);
 
-/** Paths with a given file name that this chat already touched (see pathsNamed). */
-export const FileHints = createContext<((name: string) => string[]) | null>(null);
+/** What this chat touched: paths with a given file name (see pathsNamed) and all paths, newest first (touchedPaths). */
+export const FileHints = createContext<{ named: (name: string) => string[]; touched: () => string[] } | null>(null);
 
-/** Open a path the agent wrote; the viewer looks for it by name if it is not where the text says. */
-function useOpenRef() {
+const located = new Map<string, { at: number; r: Promise<Located> }>();
+
+/** /api/locate for the hover title; the viewer asks again on open (the file may have appeared meanwhile). */
+function locateCached(path: string, q: LocateQuery): Promise<Located> {
+  const key = JSON.stringify([path, q]);
+  const hit = located.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.r;
+  const r = api.locate(path, q);
+  located.set(key, { at: Date.now(), r });
+  r.catch(() => located.delete(key));
+  return r;
+}
+
+function titleFor(r: Located): string {
+  switch (r.status) {
+    case 'ok':
+      return `Открыть ${r.path}`;
+    case 'choose':
+      return `Несколько файлов, откроется выбор:\n${r.matches.slice(0, 5).join('\n')}${r.matches.length > 5 ? '\n…' : ''}`;
+    case 'not_found':
+      return `Не найден: ${r.path}`;
+    case 'not_file':
+      return `Не файл: ${r.path}`;
+    default:
+      return `Нет доступа: ${r.path}`;
+  }
+}
+
+/**
+ * A path the agent wrote: open it in the viewer (which looks it up in the chat's repositories if it is not where the
+ * text says), and on hover show the file that will actually open.
+ */
+function useFileRef(text: string, path: string | null) {
   const cwd = useContext(FileBase);
   const hints = useContext(FileHints);
-  return (text: string, path: string) => ui.openFile({ path, cwd: cwd ?? undefined, bare: isBareName(text), hints: hints?.(baseName(path)) });
+  const [title, setTitle] = useState<string>();
+  const query = (p: string): LocateQuery => ({
+    cwd: cwd ?? undefined,
+    bare: isBareName(text),
+    rel: relOf(text),
+    hints: hints?.named(baseName(p)),
+    touched: hints?.touched(),
+  });
+  return {
+    title: title ?? (path ? `Открыть ${path}` : undefined),
+    open: () => path && ui.openFile({ path, ...query(path) }),
+    hover: () => {
+      if (path) locateCached(path, query(path)).then((r) => setTitle(titleFor(r)), () => {});
+    },
+  };
 }
 
 export function WorkspaceActions({ path }: { path: string }) {
@@ -33,18 +79,20 @@ export function WorkspaceActions({ path }: { path: string }) {
 
 function FilePathCode({ text }: { text: string }) {
   const cwd = useContext(FileBase);
-  const open = useOpenRef();
   const path = cwd && looksLikeFile(text) ? resolvePath(text, cwd) : null;
+  const ref = useFileRef(text, path);
   if (!path) return <code>{text}</code>;
   if (isWorkspace(path)) return <span><code className="break-anywhere">{text}</code> <WorkspaceActions path={path} /></span>;
   return (
     <code
       role="button"
       tabIndex={0}
-      title={`Открыть ${path}`}
+      title={ref.title}
       className="file-link"
-      onClick={() => open(text, path)}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open(text, path))}
+      onClick={ref.open}
+      onMouseEnter={ref.hover}
+      onFocus={ref.hover}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), ref.open())}
     >
       {text}
     </code>
@@ -53,29 +101,36 @@ function FilePathCode({ text }: { text: string }) {
 
 function LinkOrFile({ href, children }: { href?: string; children?: React.ReactNode }) {
   const cwd = useContext(FileBase);
-  const open = useOpenRef();
   let target = href ?? '';
   let path: string | null = null;
-  if (href && cwd && (href.startsWith('file://') || !/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href))) {
+  const fileUrl = /^file:\/\//i.test(target);
+  if (href && (fileUrl || (cwd && !/^([a-z][a-z0-9+.-]*:|#|\/\/)/i.test(href)))) {
     try {
       target = decodeURI(href);
     } catch {}
-    if (looksLikeFile(target)) path = resolvePath(target, cwd);
+    // file:// is a file whatever its name (Makefile, no extension); a plain link target only if it looks like one
+    if (fileUrl || looksLikeFile(target)) path = resolvePath(target, cwd ?? '/');
   }
+  const ref = useFileRef(target, path);
   if (path && isWorkspace(path)) return <span>{children} <WorkspaceActions path={path} /></span>;
   if (path)
     return (
       <a
         href={rawUrlFor(path)}
+        title={ref.title}
         onClick={(e) => {
           e.preventDefault();
-          open(target, path);
+          ref.open();
         }}
+        onMouseEnter={ref.hover}
+        onFocus={ref.hover}
         className="file-link"
       >
         {children}
       </a>
     );
+  // a file:// link that did not resolve: nothing to open, and not a page to open in a new tab either
+  if (fileUrl) return <span>{children}</span>;
   return (
     <a href={href} target="_blank" rel="noreferrer noopener">
       {children}
@@ -177,7 +232,7 @@ export const Markdown = memo(function Markdown({ text, className, taskPrompts = 
   const renderedText = writingBlocks(text);
   return (
     <div className={cn('md min-w-0 text-[15px] md:text-sm', className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} components={taskPrompts ? { ...components, pre({ node, children }) {
+      <ReactMarkdown urlTransform={linkUrl} remarkPlugins={[remarkGfm]} rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]} components={taskPrompts ? { ...components, pre({ node, children }) {
         const child = node?.children[0];
         if (child?.type === 'element' && child.properties.className instanceof Array && child.properties.className.includes('language-mcc-task')) {
           const start = node?.position?.start.offset;

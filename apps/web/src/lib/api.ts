@@ -9,6 +9,15 @@ export interface Located {
   matches: string[];
 }
 
+/** What the viewer knows about a path an agent wrote (see ViewerFile). */
+export interface LocateQuery {
+  cwd?: string;
+  bare?: boolean;
+  hints?: string[];
+  touched?: string[];
+  rel?: string;
+}
+
 async function get<T>(path: string, params: Record<string, string | undefined> = {}): Promise<T> {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, v);
@@ -25,8 +34,15 @@ export const api = {
   files: (cwd: string, q: string) => get<string[]>('files', { cwd, q }),
   ls: (path: string) => get<DirEntry[]>('ls', { path }),
   file: (path: string) => get<{ path: string; content: string; size: number; truncated: boolean; binary: boolean }>('file', { path }),
-  locate: (path: string, o: { cwd?: string; bare?: boolean; hints?: string[] } = {}) =>
-    get<Located>('locate', { path, cwd: o.cwd, bare: o.bare ? '1' : undefined, hints: o.hints?.length ? o.hints.join('\n') : undefined }),
+  locate: (path: string, o: LocateQuery = {}) =>
+    get<Located>('locate', {
+      path,
+      cwd: o.cwd,
+      bare: o.bare ? '1' : undefined,
+      hints: o.hints?.length ? o.hints.join('\n') : undefined,
+      touched: o.touched?.length ? o.touched.join('\n') : undefined,
+      rel: o.rel,
+    }),
   git: (cwd: string) => get<GitStatus>('git', { cwd }),
   uploads: () => get<{ dir: string; files: number; bytes: number }>('uploads'),
   voice: () => get<{ records: VoiceRecord[]; bytes: number; dir: string }>('voice'),

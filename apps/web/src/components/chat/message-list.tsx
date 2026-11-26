@@ -1,12 +1,12 @@
 'use client';
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownIcon, Loader2Icon } from 'lucide-react';
 import type { ChatItem, ChatState, ToolItem } from '@mcc-agents/protocol';
 import { canBranch } from '@/lib/format';
 import { FileBase, FileHints, Markdown, TaskPrompt } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
-import { pathsNamed } from '@/lib/files';
+import { pathsNamed, touchedPaths } from '@/lib/files';
 import { store } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { MessageActions, NoticeLine, ThinkingBlock, ToolCard, UserBubble, isVisible } from './items';
@@ -189,7 +189,7 @@ export function MessageList({ state, footer }: { state: ChatState; footer?: Reac
     itemsRef.current = state.items;
   }, [state.items]);
   const cwd = state.summary.cwd;
-  const hints = useCallback((name: string) => pathsNamed(itemsRef.current, name, cwd), [cwd]);
+  const hints = useMemo(() => ({ named: (name: string) => pathsNamed(itemsRef.current, name, cwd), touched: () => touchedPaths(itemsRef.current, cwd) }), [cwd]);
 
   const last = top[top.length - 1];
   const streamingNow = last && ((last.kind === 'assistant' && last.streaming) || (last.kind === 'thinking' && last.streaming));

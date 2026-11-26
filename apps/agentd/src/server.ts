@@ -57,6 +57,8 @@ async function api(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse
           cwd: q.get('cwd') || undefined,
           bare: q.get('bare') === '1',
           hints: (q.get('hints') ?? '').split('\n').filter(Boolean).slice(0, 50),
+          touched: (q.get('touched') ?? '').split('\n').filter(Boolean).slice(0, 30),
+          rel: q.get('rel') || undefined,
         }));
       case '/api/raw':
         return await serveRaw(req, res, q);
