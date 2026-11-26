@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentKind, AttachedFile, ChatItem, FileDiff, TodoEntry, ToolItem } from '@mcc-agents/protocol';
 import type { Chat } from './chat.ts';
+import { isChatDir } from './chat-dirs.ts';
 import { UPLOADS_DIR } from './uploads.ts';
 
 /**
@@ -12,6 +13,7 @@ import { UPLOADS_DIR } from './uploads.ts';
  * What a receiving agent needs: every user message verbatim (task, decisions), the agent's answers, what was done —
  * commands with exit codes (output only where it matters: failures and the last few), edited files with line counts
  * (the files themselves are on disk, `git diff` shows them), reads/searches as one-liners. Thinking is left out.
+ * A conversation («Беседа», ~/chat/…) is not a project: no git, and of the steps only web lookups and the files it made.
  */
 
 export const AGENT_LABEL: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex', antigravity: 'Antigravity' };
@@ -128,19 +130,23 @@ export async function transcript(chat: Chat, title: string): Promise<string> {
   const answers = items.flatMap((it, i) => (it.kind === 'assistant' && it.text.trim() ? [i] : []));
   const total = items.reduce((n, it) => n + (it.kind === 'assistant' || it.kind === 'user' ? it.text.length : 200), 0);
   const shorten = total > SOFT_LIMIT ? new Set(answers.slice(0, -KEEP_FULL_ANSWERS)) : new Set<number>();
+  const talk = isChatDir(chat.cwd);
 
   const out: string[] = [];
-  out.push(`# Разговор из ${agent}: «${title}»`);
+  out.push(`# ${talk ? 'Беседа' : 'Разговор'} из ${agent}: «${title}»`);
   out.push('');
   out.push(`- Агент: ${agent}${chat.state.settings.model ? `, модель \`${chat.state.settings.model}\`` : ''}`);
-  out.push(`- Папка: \`${chat.cwd}\``);
+  out.push(`- ${talk ? 'Папка беседы' : 'Папка'}: \`${chat.cwd}\``);
   out.push(`- Чат: \`${chat.id}\``);
   out.push(`- Передан: ${new Date().toLocaleString('ru-RU')}`);
   out.push('');
   out.push(
-    'Ниже весь разговор по порядку. Сообщения пользователя и ответы агента — как были. Действия агента — кратко: команды с кодом ' +
-      `выхода (вывод — только у упавших и у последних ${LAST_OUTPUTS}), изменённые файлы с числом строк (сами изменения — на диске, ` +
-      'смотри `git diff`), прочитанное и поиски. Размышления агента не включены.',
+    talk
+      ? 'Это беседа, а не работа над проектом. Ниже весь разговор по порядку: сообщения пользователя и ответы ассистента — как были. ' +
+          'Из действий — только поиски в интернете и созданные файлы (они лежат в папке беседы). Размышления не включены.'
+      : 'Ниже весь разговор по порядку. Сообщения пользователя и ответы агента — как были. Действия агента — кратко: команды с кодом ' +
+          `выхода (вывод — только у упавших и у последних ${LAST_OUTPUTS}), изменённые файлы с числом строк (сами изменения — на диске, ` +
+          'смотри `git diff`), прочитанное и поиски. Размышления агента не включены.',
   );
   out.push('');
   out.push('## Разговор');
@@ -171,6 +177,7 @@ export async function transcript(chat: Chat, title: string): Promise<string> {
       out.push('', text);
       return;
     }
+    if (talk && !['web', 'write', 'edit', 'plan', 'question'].includes(it.category)) return;
     const line = toolLine(it, it.category === 'bash' && (it.status === 'error' || keepOutput.has(i)));
     if (line) {
       // tool lines stick together as a list
@@ -178,11 +185,14 @@ export async function transcript(chat: Chat, title: string): Promise<string> {
       out.push(line);
     }
   });
-  out.push('', '## Состояние на момент передачи', '');
   const todos = todosBlock(chat.state.todos);
+  // a conversation has no git: the section only when there is a task list
+  if (todos || !talk) out.push('', '## Состояние на момент передачи', '');
   if (todos) out.push(todos);
-  const g = await gitState(chat.cwd);
-  out.push(g || 'Папка не в git-репозитории.\n');
+  if (!talk) {
+    const g = await gitState(chat.cwd);
+    out.push(g || 'Папка не в git-репозитории.\n');
+  }
   return out.join('\n').replace(/\n{3,}/g, '\n\n') + '\n';
 }
 
@@ -196,8 +206,26 @@ export async function handoffFile(chat: Chat, title: string): Promise<AttachedFi
   return { path: file, name, size: Buffer.byteLength(text), mediaType: 'text/markdown' };
 }
 
+/** «Перенести в проект»: the first message of a project chat that picks up a conversation. */
+export function promoteMessage(from: AgentKind, title: string, chatDir: string, cwd: string, note?: string): string {
+  let s =
+    `Переносим в проект \`${cwd}\` беседу, которая шла в ${AGENT_LABEL[from]} («${title}»). Вся её история — в приложенном файле: ` +
+    `прочитай его целиком. Файлы, созданные в беседе, лежат в \`${chatDir}\` — бери оттуда, если понадобятся.\n\n` +
+    'Сейчас: коротко напиши, о чём была беседа, что из неё относится к этому проекту и что, по-твоему, нужно сделать. ' +
+    'Потом жди моей команды: ничего не меняй и не запускай, пока я не скажу.';
+  if (note?.trim()) s += `\n\n${note.trim()}`;
+  return s;
+}
+
 /** The first message of the new chat. */
 export function handoffMessage(from: AgentKind, title: string, cwd: string, note?: string): string {
+  if (isChatDir(cwd)) {
+    let t =
+      `Продолжаем беседу, которая шла в ${AGENT_LABEL[from]} («${title}»). Вся её история — в приложенном файле: прочитай его целиком.\n\n` +
+      'Сейчас: в двух-трёх фразах напомни, о чём мы говорили и на чём остановились, — и продолжай беседу как ни в чём не бывало.';
+    if (note?.trim()) t += `\n\n${note.trim()}`;
+    return t;
+  }
   let s =
     `Продолжаем разговор, который шёл в ${AGENT_LABEL[from]} (чат «${title}», папка \`${cwd}\`). ` +
     'Вся его история — в приложенном файле: прочитай его целиком.\n\n' +

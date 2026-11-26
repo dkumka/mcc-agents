@@ -21,7 +21,7 @@ import { Chat, type ChatSink } from './chat.ts';
 import { CHAT_ROOT, isChatDir, newChatDir } from './chat-dirs.ts';
 import { config } from './config.ts';
 import { logger } from './log.ts';
-import { handoffFile, handoffMessage } from './handoff.ts';
+import { handoffFile, handoffMessage, promoteMessage } from './handoff.ts';
 import { store, type ChatMeta } from './store.ts';
 import { TelegramBridge, escapeHtml } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
@@ -428,6 +428,13 @@ export class Hub implements ChatSink {
         if (src.summary.status === 'running' || src.summary.status === 'starting' || src.summary.status === 'waiting')
           throw new Error('Агент ещё работает — дождитесь конца ответа или остановите его');
         if (!src.cwd || !fs.existsSync(src.cwd)) throw new Error(`папка чата не найдена: ${src.cwd}`);
+        // «Перенести в проект»: a conversation goes on in a project folder
+        const cwd = msg.cwd ? path.resolve(msg.cwd) : src.cwd;
+        if (msg.cwd) {
+          if (!isChatDir(src.cwd)) throw new Error('В проект переносятся только беседы');
+          if (isChatDir(cwd) || !fs.existsSync(cwd)) throw new Error(`папка проекта не найдена: ${cwd}`);
+          if (store.project(cwd).deleted || store.project(cwd).archived) store.setProject(cwd, { deleted: false, archived: false });
+        }
         // the history comes from disk (Claude .jsonl / Codex turns / agy session/load): the old agent's limits are not spent
         await this.ensureLoaded(src);
         const title = this.decorate(src.summary).title;
@@ -436,9 +443,9 @@ export class Hub implements ChatSink {
         const id = await this.startChat(client, {
           reqId: msg.reqId,
           agent: msg.agent,
-          cwd: src.cwd, // a conversation (~/chat/…) goes on in its own folder too
+          cwd, // a conversation (~/chat/…) goes on in its own folder too, unless moved to a project
           settings: msg.settings,
-          message: { text: handoffMessage(src.agent, title, src.cwd, msg.note), files: [file] },
+          message: { text: msg.cwd ? promoteMessage(src.agent, title, src.cwd, cwd, msg.note) : handoffMessage(src.agent, title, src.cwd, msg.note), files: [file] },
           title,
           meta: { handoffFrom: src.id },
         });

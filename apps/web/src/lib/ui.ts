@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import type { ChatMode } from '@mcc-agents/protocol';
 
 export type PanelTab = 'changes' | 'files' | 'tasks';
 
@@ -33,17 +34,24 @@ export interface ForkRequest {
 
 interface UiState {
   fork: ForkRequest | null;
-  /** «Продолжить в другом агенте» for this chat. */
-  handoff: { chatId: string } | null;
+  /** «Продолжить в другом агенте» for this chat; `project` — «Перенести в проект» (a conversation goes on in a project folder). */
+  handoff: { chatId: string; project?: boolean } | null;
   panel: PanelTab | null;
   /** Wrap long lines in the side panel (files, diffs). */
   wrap: boolean;
   panelFile: string | null;
   viewer: ViewerFile | null;
+  /** Show the agent's steps (thinking, commands) in full, per mode; off — each turn's steps fold into one line. */
+  work: Record<ChatMode, boolean>;
 }
 
-let state: UiState = { fork: null, handoff: null, panel: null, wrap: true, panelFile: null, viewer: null };
-if (typeof window !== 'undefined') state.wrap = localStorage.getItem('panelWrap') !== '0';
+let state: UiState = { fork: null, handoff: null, panel: null, wrap: true, panelFile: null, viewer: null, work: { chat: false, code: true } };
+if (typeof window !== 'undefined') {
+  state.wrap = localStorage.getItem('panelWrap') !== '0';
+  try {
+    state.work = { ...state.work, ...JSON.parse(localStorage.getItem('showWork') ?? '{}') };
+  } catch {}
+}
 const listeners = new Set<() => void>();
 
 export const ui = {
@@ -55,6 +63,12 @@ export const ui = {
   toggleWrap() {
     ui.set({ wrap: !state.wrap });
     localStorage.setItem('panelWrap', state.wrap ? '1' : '0');
+  },
+  toggleWork(mode: ChatMode) {
+    ui.set({ work: { ...state.work, [mode]: !state.work[mode] } });
+    try {
+      localStorage.setItem('showWork', JSON.stringify(state.work));
+    } catch {}
   },
   openFile(f: ViewerFile) {
     ui.set({ viewer: f });

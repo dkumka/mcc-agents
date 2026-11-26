@@ -22,6 +22,9 @@ import {
   ArrowRightLeftIcon,
   BellRingIcon,
   BellIcon,
+  CheckIcon,
+  FolderInputIcon,
+  WorkflowIcon,
 } from 'lucide-react';
 import type { AgentCapabilities, AgentKind, ChatState, SendPayload } from '@mcc-agents/protocol';
 import { AGENT_NAME, AgentMark } from '@/components/agent-badge';
@@ -135,6 +138,7 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
   const running = state.tasks.filter((t) => t.status === 'running').length;
   const cmd = terminalCommand(s.agent, s.nativeId, s.cwd);
   const isChat = s.mode === 'chat';
+  const showWork = useUi((u) => u.work[s.mode ?? 'code']);
   return (
     <header className="pt-safe flex shrink-0 items-center gap-1 border-b bg-background/95 px-2 backdrop-blur md:px-3">
       <div className="flex h-12 w-full min-w-0 items-center gap-1">
@@ -181,6 +185,22 @@ function Header({ state, caps }: { state: ChatState; caps: AgentCapabilities | n
             <DropdownMenuItem className="py-2.5" onClick={() => setRename(true)}>
               <PencilIcon /> Переименовать
             </DropdownMenuItem>
+            <DropdownMenuItem
+              className="py-2.5"
+              title={isChat ? 'Для всех бесед' : 'Для всех чатов с кодом'}
+              onSelect={(e) => {
+                e.preventDefault();
+                ui.toggleWork(s.mode ?? 'code');
+              }}
+            >
+              <WorkflowIcon /> <span className="flex-1">Показывать ход работы</span>
+              {showWork && <CheckIcon className="text-foreground" />}
+            </DropdownMenuItem>
+            {isChat && (
+              <DropdownMenuItem className="py-2.5" disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'} onClick={() => ui.set({ handoff: { chatId: s.id, project: true } })}>
+                <FolderInputIcon /> Перенести в проект…
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem className="py-2.5" disabled={s.status === 'running' || s.status === 'starting' || s.status === 'waiting'} onClick={() => ui.set({ handoff: { chatId: s.id } })}>
               <ArrowRightLeftIcon /> Продолжить в другом агенте…
             </DropdownMenuItem>

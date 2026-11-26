@@ -407,8 +407,9 @@ export type ClientMessage =
   /**
    * Continue the dialogue in another agent: a new chat (same folder) whose first message carries the whole history as a
    * Markdown file; the new agent sums it up and waits. Answered with `created` (reqId).
+   * `cwd` — «Перенести в проект»: a conversation goes on in this project folder (any agent, the same one too).
    */
-  | { t: 'handoff'; reqId: string; chatId: ChatId; agent: AgentKind; settings: ChatSettings; note?: string }
+  | { t: 'handoff'; reqId: string; chatId: ChatId; agent: AgentKind; settings: ChatSettings; note?: string; cwd?: string }
   /** Undo a rollback: show the original again, hide this branch. */
   | { t: 'unrewind'; chatId: ChatId }
   | { t: 'send'; chatId: ChatId; message: SendPayload }

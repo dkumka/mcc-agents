@@ -28,7 +28,7 @@ function expand(p: string) {
   return t.replace(/\/+$/, '');
 }
 
-function ProjectPicker({ value, onChange, projects, onNew }: { value: string; onChange: (p: string) => void; projects: ProjectInfo[]; onNew: () => void }) {
+export function ProjectPicker({ value, onChange, projects, onNew }: { value: string; onChange: (p: string) => void; projects: ProjectInfo[]; onNew: () => void }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const custom = q.startsWith('/') || q.startsWith('~') ? expand(q) : '';

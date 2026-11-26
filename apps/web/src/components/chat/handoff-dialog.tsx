@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeftIcon, Loader2Icon } from 'lucide-react';
+import { ArrowRightLeftIcon, FolderInputIcon, Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { AGENTS, type AgentKind, type ChatSettings } from '@mcc-agents/protocol';
+import { AGENTS, type AgentKind, type ChatSettings, type ProjectInfo } from '@mcc-agents/protocol';
 import { AGENT_NAME } from '@/components/agent-badge';
+import { NewProjectDialog } from '@/components/new-project-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { api } from '@/lib/api';
 import { store, useStore } from '@/lib/store';
 import { ui, useUi } from '@/lib/ui';
 import { useCaps } from './chat-view';
 import { SettingsChips } from './composer';
-import { AgentCards, autoMode, lastSettings } from './new-chat';
+import { AgentCards, ProjectPicker, autoMode, lastSettings } from './new-chat';
 
 /** Open «Продолжить в другом агенте» for a chat (menu, limit errors). */
 export function openHandoff(chatId: string) {
@@ -21,23 +23,44 @@ export function openHandoff(chatId: string) {
 /**
  * «Продолжить в другом агенте»: pick the agent (model, mode), optionally add a word, and a new chat in the same folder
  * starts with the whole history as a file — the new agent sums it up and waits for a command.
+ * «Перенести в проект» (a conversation only): the same, but in a project folder picked here, and any agent, the same one too.
  */
 export function HandoffDialog() {
   const req = useUi((s) => s.handoff);
   const src = useStore((s) => (req ? s.chats[req.chatId] : undefined));
-  const others = useMemo(() => AGENTS.filter((a) => a !== src?.agent), [src?.agent]);
+  const toProject = !!req?.project;
+  const others = useMemo(() => (toProject ? [...AGENTS] : AGENTS.filter((a) => a !== src?.agent)), [src?.agent, toProject]);
   const [agent, setAgent] = useState<AgentKind>('codex');
   const [settings, setSettings] = useState<ChatSettings>({});
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const caps = useCaps(agent, src?.cwd);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [cwd, setCwd] = useState('');
+  const [newProject, setNewProject] = useState(false);
+  const caps = useCaps(agent, toProject ? cwd || undefined : src?.cwd);
 
   useEffect(() => {
     if (!req || !src) return;
-    setAgent((a) => (others.includes(a) ? a : others[0]));
+    setAgent((a) => (toProject ? src.agent : others.includes(a) ? a : others[0]));
     setNote('');
     setBusy(false);
-  }, [req, src, others]);
+  }, [req, src, others, toProject]);
+
+  useEffect(() => {
+    if (!toProject) return;
+    let off = false;
+    api
+      .projects()
+      .then((p) => {
+        if (off) return;
+        setProjects(p);
+        setCwd((c) => c || localStorage.getItem('lastCwd') || p.find((x) => x.chatCount > 0)?.path || p[0]?.path || '');
+      })
+      .catch(() => {});
+    return () => {
+      off = true;
+    };
+  }, [toProject]);
 
   // model / effort as last time for that agent, permissions — «Авто» (as a new chat)
   useEffect(() => {
@@ -58,10 +81,13 @@ export function HandoffDialog() {
     try {
       const clean = Object.fromEntries(Object.entries(settings).filter(([, v]) => v)) as ChatSettings;
       if (agent === 'claude' && clean.model === 'default') delete clean.model;
-      const id = await store.handoff(req.chatId, agent, clean, note);
+      const id = await store.handoff(req.chatId, agent, clean, note, toProject ? cwd : undefined);
       close();
+      if (toProject) localStorage.setItem('lastCwd', cwd);
       store.navigate({ kind: 'chat', chatId: id });
-      toast.success(`Продолжаем в ${AGENT_NAME[agent]}`, { description: 'История передана файлом. Агент перескажет, где вы остановились, и будет ждать команды.' });
+      toast.success(toProject ? 'Беседа перенесена в проект' : `Продолжаем в ${AGENT_NAME[agent]}`, {
+        description: 'История передана файлом. Агент перескажет, где вы остановились, и будет ждать команды.',
+      });
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(false);
@@ -75,11 +101,13 @@ export function HandoffDialog() {
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ArrowRightLeftIcon className="size-5" /> Продолжить в другом агенте
+            {toProject ? <FolderInputIcon className="size-5" /> : <ArrowRightLeftIcon className="size-5" />}
+            {toProject ? 'Перенести в проект' : 'Продолжить в другом агенте'}
           </DialogTitle>
           <DialogDescription>
-            Новый чат в той же папке. Вся история этого чата уйдёт файлом; новый агент коротко перескажет, где вы остановились, и
-            будет ждать команды. Этот чат не меняется.
+            {toProject
+              ? 'Новый чат с кодом в выбранной папке. История беседы уйдёт файлом, файлы беседы останутся на месте — агент возьмёт их, если понадобятся. Беседа не меняется.'
+              : 'Новый чат в той же папке. Вся история этого чата уйдёт файлом; новый агент коротко перескажет, где вы остановились, и будет ждать команды. Этот чат не меняется.'}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -89,6 +117,19 @@ export function HandoffDialog() {
             submit();
           }}
         >
+          {toProject && (
+            <>
+              <ProjectPicker value={cwd} onChange={setCwd} projects={projects} onNew={() => setNewProject(true)} />
+              <NewProjectDialog
+                open={newProject}
+                onOpenChange={setNewProject}
+                onCreated={(p) => {
+                  setProjects((cur) => [{ path: p, name: p.split('/').pop() ?? p, lastActivity: Date.now(), chatCount: 0, isGit: true }, ...cur]);
+                  setCwd(p);
+                }}
+              />
+            </>
+          )}
           <AgentCards agent={agent} onChange={setAgent} agents={others} compact />
           <div className="flex min-h-9 flex-wrap items-center gap-1">
             <SettingsChips caps={caps} settings={settings} onChange={(p) => setSettings((cur) => ({ ...cur, ...p }))} />
@@ -111,8 +152,9 @@ export function HandoffDialog() {
             <Button type="button" variant="outline" onClick={close}>
               Отмена
             </Button>
-            <Button type="submit" disabled={busy || running || !caps?.available}>
-              {busy ? <Loader2Icon className="animate-spin" /> : <ArrowRightLeftIcon />} Продолжить в {AGENT_NAME[agent]}
+            <Button type="submit" disabled={busy || running || !caps?.available || (toProject && !cwd)}>
+              {busy ? <Loader2Icon className="animate-spin" /> : toProject ? <FolderInputIcon /> : <ArrowRightLeftIcon />}
+              {toProject ? 'Перенести' : `Продолжить в ${AGENT_NAME[agent]}`}
             </Button>
           </DialogFooter>
         </form>
