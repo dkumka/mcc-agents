@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type {
   AgentCapabilities,
+  AgentLimits,
   Approval,
   ApprovalDecision,
   ChatItem,
@@ -233,6 +234,32 @@ interface PendingQuestion {
   sid: string;
   toolCallId: string;
   questions: Question[];
+}
+
+/** Extract a clean human-readable message from a failed `agy -p "/usage" --output-format json` run. */
+export function parseUsageError(err: Error | null, stdout = '', stderr = ''): string {
+  const trimmed = stdout.trim();
+  if (trimmed) {
+    try {
+      const j: Json = JSON.parse(trimmed);
+      const msg =
+        typeof j?.error === 'string' && j.error.trim()
+          ? j.error.trim()
+          : j?.status !== 'SUCCESS' && typeof j?.response === 'string' && j.response.trim()
+            ? j.response.trim()
+            : '';
+      if (msg) return msg.replace(/\s+/g, ' ').slice(0, 300);
+    } catch {
+      /* fall back to stderr / err.message */
+    }
+  }
+  const raw = stderr.trim() || err?.message?.trim() || 'нет данных';
+  const cleaned = raw
+    .replace(/^Command failed:[^\n]*\n?/i, '')
+    .replace(/^error:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (cleaned || 'нет данных').slice(0, 300);
 }
 
 /**
@@ -899,15 +926,23 @@ export class AntigravityAdapter implements Adapter {
     return !l?.windows.length || Date.now() - l.updatedAt > 60 * 60_000;
   }
 
-  /** Store plan + windows (absent windows: keep the last ones and their time). */
-  private publishLimits(windows?: LimitWindow[]) {
+  /** Store plan + windows or error (absent both: keep previous windows and error). */
+  private publishLimits(windows?: LimitWindow[], error?: string) {
     const prev = this.limitsNow();
-    this.hub.setLimits({
+    const next: AgentLimits = {
       agent: AGENT,
       plan: this.tier ?? prev?.plan,
       windows: windows ?? prev?.windows ?? [],
       updatedAt: windows ? Date.now() : (prev?.updatedAt ?? 0),
-    });
+    };
+    if (error && !windows) {
+      next.error = error;
+      next.errorAt = Date.now();
+    } else if (!windows && prev?.error) {
+      next.error = prev.error;
+      next.errorAt = prev.errorAt;
+    }
+    this.hub.setLimits(next);
   }
 
   refreshUsage() {
@@ -916,7 +951,11 @@ export class AntigravityAdapter implements Adapter {
       return;
     }
     this.usageRun = this.fetchUsage()
-      .catch((e) => log.warn('usage', (e as Error).message))
+      .catch((e) => {
+        const msg = (e as Error).message || 'не удалось получить лимиты';
+        log.warn('usage', msg);
+        this.publishLimits(undefined, msg);
+      })
       .finally(() => {
         this.usageRun = null;
         if (this.usageAgain) {
@@ -933,13 +972,13 @@ export class AntigravityAdapter implements Adapter {
   private async fetchUsage() {
     if (!this.models.length) await this.listModels().catch(() => {});
     const out = await new Promise<string>((resolve, reject) =>
-      execFile(config.agyBin, ['-p', '/usage', '--output-format', 'json'], { timeout: 60_000, cwd: config.home, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) =>
-        err ? reject(err) : resolve(String(stdout)),
+      execFile(config.agyBin, ['-p', '/usage', '--output-format', 'json'], { timeout: 60_000, cwd: config.home, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) =>
+        err ? reject(new Error(parseUsageError(err, String(stdout ?? ''), String(stderr ?? '')))) : resolve(String(stdout)),
       ),
     );
     const j: Json = JSON.parse(out);
     const groups = (j?.command?.data?.groups ?? []) as Json[];
-    if (j?.status !== 'SUCCESS' || !groups.length) throw new Error(`agy /usage: ${String(j?.error ?? j?.response ?? 'нет данных').slice(0, 200)}`);
+    if (j?.status !== 'SUCCESS' || !groups.length) throw new Error(parseUsageError(null, out, ''));
     const windows: LimitWindow[] = [];
     for (const g of groups) {
       const name = String(g.name ?? '');

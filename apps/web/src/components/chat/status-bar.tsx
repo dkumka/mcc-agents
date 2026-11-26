@@ -1,6 +1,6 @@
 'use client';
 
-import { ActivityIcon } from 'lucide-react';
+import { ActivityIcon, AlertCircleIcon } from 'lucide-react';
 import type { AgentKind, AgentLimits, BgTask, LimitWindow, Usage } from '@mcc-agents/protocol';
 import { useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -43,22 +43,50 @@ function UsageBar({ w }: { w: LimitWindow }) {
   );
 }
 
+function formatAgo(ts?: number): string {
+  if (!ts) return '';
+  const a = timeAgo(ts);
+  return a === 'сейчас' ? 'только что' : /\d (мин|ч|д)$/.test(a) ? `${a} назад` : a;
+}
+
 /**
  * «5 часов 6% · Неделя 9%» — tap (phone) or hover (mouse) shows when each limit resets.
  * The numbers come with the agents' own answers (Claude: rate_limit_event, Codex: account/rateLimits), so they can be a bit old.
  * Antigravity counts per group of models: inline — the group of `model` (else the first, Gemini), the card — all groups.
+ * When fetching limits fails (e.g. `agy /usage` eligibility error), shows «лимиты недоступны» with the reason in the popover.
  */
-export function LimitsInline({ limits, agent, model, className }: { limits: AgentLimits[]; agent: AgentKind; model?: string; className?: string }) {
+export function LimitsInline({ limits, agent, model, className, plain }: { limits: AgentLimits[]; agent: AgentKind; model?: string; className?: string; plain?: boolean }) {
   const l = limits.find((x) => x.agent === agent);
   const [open, setOpen] = useState(false);
   const hover = useRef<number | undefined>(undefined);
-  if (!l || !l.windows.length) return null;
-  const grouped = l.windows.some((w) => w.groupId);
+  if (!l || (!l.windows.length && !l.error)) return null;
+  const hasWindows = l.windows.length > 0;
+  const grouped = hasWindows && l.windows.some((w) => w.groupId);
   const gid = grouped ? ((model && l.windows.find((w) => w.models?.includes(model))?.groupId) ?? l.windows[0].groupId) : undefined;
   // «5 часов» before «Неделя», as for Claude / Codex
   const five = (w: LimitWindow) => (w.label === '5 часов' ? 0 : 1);
   const shown = grouped ? l.windows.filter((w) => w.groupId === gid).sort((a, b) => five(a) - five(b)) : l.windows;
   const groups = grouped ? [...new Set(l.windows.map((w) => w.groupId))].sort((a, b) => (a === gid ? -1 : b === gid ? 1 : 0)) : [];
+  if (plain) {
+    if (!hasWindows) {
+      return (
+        <span className={cn('inline-flex items-center gap-1 text-warning', className)}>
+          <AlertCircleIcon className="size-3 shrink-0" />
+          <span className="truncate">лимиты недоступны</span>
+        </span>
+      );
+    }
+    return (
+      <span className={cn('inline-flex items-center gap-2', className)}>
+        {grouped && <span>{shown[0]?.group}</span>}
+        {shown.map((w) => (
+          <span key={w.id} className={cn('tabular', levelClass(w.usedPercent))}>
+            {w.label} {w.usedPercent}%
+          </span>
+        ))}
+      </span>
+    );
+  }
   const fine = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   const enter = () => {
     if (!fine()) return;
@@ -70,7 +98,8 @@ export function LimitsInline({ limits, agent, model, className }: { limits: Agen
     window.clearTimeout(hover.current);
     hover.current = window.setTimeout(() => setOpen(false), 200);
   };
-  const ago = ((a: string) => (a === 'сейчас' ? 'только что' : /\d (мин|ч|д)$/.test(a) ? `${a} назад` : a))(timeAgo(l.updatedAt));
+  const ago = formatAgo(l.updatedAt);
+  const errorAgo = formatAgo(l.errorAt);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -78,15 +107,29 @@ export function LimitsInline({ limits, agent, model, className }: { limits: Agen
           type="button"
           onMouseEnter={enter}
           onMouseLeave={leave}
-          className={cn('inline-flex items-center gap-2 rounded px-0.5 text-left hover:text-foreground', className)}
-          aria-label={`Лимиты ${AGENT_NAME[agent]}: когда сброс`}
+          className={cn(
+            'inline-flex min-w-0 items-center rounded px-0.5 text-left',
+            hasWindows ? 'gap-2 hover:text-foreground' : 'gap-1 text-warning hover:text-warning/80',
+            className,
+          )}
+          aria-label={hasWindows ? `Лимиты ${AGENT_NAME[agent]}: когда сброс` : `Лимиты ${AGENT_NAME[agent]}: причина недоступности`}
         >
-          {grouped && <span>{shown[0]?.group}</span>}
-          {shown.map((w) => (
-            <span key={w.id} className={cn('tabular', levelClass(w.usedPercent))}>
-              {w.label} {w.usedPercent}%
-            </span>
-          ))}
+          {hasWindows ? (
+            <>
+              {grouped && <span>{shown[0]?.group}</span>}
+              {shown.map((w) => (
+                <span key={w.id} className={cn('tabular', levelClass(w.usedPercent))}>
+                  {w.label} {w.usedPercent}%
+                </span>
+              ))}
+              {l.error && <AlertCircleIcon className="size-3 shrink-0 text-warning" />}
+            </>
+          ) : (
+            <>
+              <AlertCircleIcon className="size-3 shrink-0" />
+              <span className="truncate">лимиты недоступны</span>
+            </>
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -101,8 +144,9 @@ export function LimitsInline({ limits, agent, model, className }: { limits: Agen
           <span className="text-sm font-medium">{AGENT_NAME[agent]}</span>
           {l.plan && <span className="truncate text-muted-foreground">{l.plan}</span>}
         </div>
-        {grouped
-          ? groups.map((g) => {
+        {hasWindows ? (
+          grouped ? (
+            groups.map((g) => {
               const ws = l.windows.filter((w) => w.groupId === g).sort((a, b) => five(a) - five(b));
               return (
                 <div key={g} className="space-y-2">
@@ -116,8 +160,22 @@ export function LimitsInline({ limits, agent, model, className }: { limits: Agen
                 </div>
               );
             })
-          : l.windows.map((w) => <UsageBar key={w.id} w={w} />)}
-        {l.updatedAt ? (
+          ) : (
+            l.windows.map((w) => <UsageBar key={w.id} w={w} />)
+          )
+        ) : (
+          <div className="space-y-2">
+            <div className="font-medium text-warning">Не удалось получить лимиты</div>
+            <div className="rounded-md bg-muted/60 p-2 font-mono text-[11px] break-words text-foreground">{l.error}</div>
+            {errorAgo ? <div className="text-[11px] text-muted-foreground">Последняя проверка — {errorAgo}.</div> : null}
+          </div>
+        )}
+        {hasWindows && l.error ? (
+          <div className="border-t pt-2 text-[11px] break-words text-warning">
+            Не удалось обновить{errorAgo ? ` (${errorAgo})` : ''}: {l.error}
+          </div>
+        ) : null}
+        {hasWindows && l.updatedAt ? (
           <div className="border-t pt-2 text-[11px] text-muted-foreground">
             {agent === 'antigravity'
               ? `У каждой группы моделей свои лимиты. Обновляются после каждого ответа Antigravity; последние — ${ago}.`

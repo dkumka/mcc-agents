@@ -155,7 +155,7 @@ export function AgentCards({ agent, onChange, compact, agents = AGENTS }: { agen
           <span className="min-w-0 max-w-full">
             <span className="block truncate text-[13px] font-medium sm:text-sm">{AGENT_NAME[a]}</span>
             <span className="hidden truncate text-[11px] text-muted-foreground sm:block">
-              <LimitsInline limits={limits} agent={a} />
+              <LimitsInline limits={limits} agent={a} plain />
             </span>
           </span>
         </button>

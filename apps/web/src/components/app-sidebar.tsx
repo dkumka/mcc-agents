@@ -253,13 +253,16 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="pb-safe gap-1 border-t">
         <div className="space-y-1 px-1 text-[11px] text-muted-foreground">
-          {AGENTS.map((a) => (
-            <div key={a} className="flex items-center gap-1.5">
-              <AgentMark agent={a} className="size-3.5 text-[8px]" />
-              <LimitsInline limits={limits} agent={a} />
-              {!limits.find((l) => l.agent === a)?.windows.length && <span>лимиты появятся после первого запроса</span>}
-            </div>
-          ))}
+          {AGENTS.map((a) => {
+            const l = limits.find((x) => x.agent === a);
+            return (
+              <div key={a} className="flex min-w-0 items-center gap-1.5">
+                <AgentMark agent={a} className="size-3.5 shrink-0 text-[8px]" />
+                <LimitsInline limits={limits} agent={a} className="min-w-0 truncate" />
+                {!l?.windows.length && !l?.error && <span className="truncate">лимиты появятся после первого запроса</span>}
+              </div>
+            );
+          })}
         </div>
         <div className="flex items-center gap-1">
           <a href="https://mcc.klemid.ru" className="flex-1 truncate px-1 text-[11px] text-muted-foreground hover:text-foreground">

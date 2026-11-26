@@ -240,6 +240,10 @@ export interface AgentLimits {
   plan?: string;
   windows: LimitWindow[];
   updatedAt: number;
+  /** Last error fetching limits (e.g. agy /usage failed). Cleared on success. */
+  error?: string;
+  /** When `error` occurred (unix ms). */
+  errorAt?: number;
 }
 
 export interface BgTask {
