@@ -34,6 +34,7 @@ import { CopyButton, Markdown } from '@/components/markdown';
 import { api } from '@/lib/api';
 import { browserImage, fileKind, fmtSize, rawUrl, resolvePath } from '@/lib/files';
 import { duration, shortPath, tokens } from '@/lib/format';
+import { displayOption, extractQuestionsFromInput } from '@/lib/questions';
 import { ui } from '@/lib/ui';
 import { cn } from '@/lib/utils';
 
@@ -248,6 +249,9 @@ export function ThinkingBlock({ item }: { item: ThinkingItem }) {
 // ---------------------------------------------------------------- tools
 
 function StatusIcon({ item }: { item: ToolItem }) {
+  if (item.category === 'question' && item.status === 'pending') {
+    return <span className="inline-flex size-2 shrink-0 rounded-full bg-warning" title="Ждёт ответа" />;
+  }
   switch (item.status) {
     case 'pending':
     case 'running':
@@ -346,12 +350,38 @@ function ToolBody({ item, chatId, cwd, children }: { item: ToolItem; chatId: str
         </div>
       );
     case 'question': {
-      const qs = (Array.isArray(input.questions) ? input.questions : []) as { question?: string }[];
+      const qs = extractQuestionsFromInput(item.input);
       return (
-        <div className="space-y-2 text-sm">
-          {qs.map((q, i) => (
-            <div key={i} className="font-medium">
-              {q.question}
+        <div className="space-y-3 text-sm">
+          {qs.map((q, qi) => (
+            <div key={qi} className="space-y-1.5">
+              {q.header && <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{q.header}</div>}
+              <div className="font-medium leading-snug break-anywhere">
+                {qs.length > 1 ? `${qi + 1}. ` : ''}
+                {q.question}
+              </div>
+              {q.multiSelect && <div className="text-xs text-muted-foreground">Можно выбрать несколько</div>}
+              {q.options.length > 0 && (
+                <ul className="space-y-1 pl-0.5 text-[13px] text-muted-foreground">
+                  {q.options.map((rawOpt, oi) => {
+                    const opt = displayOption(rawOpt);
+                    return (
+                      <li key={oi} className="flex items-start gap-2">
+                        <span className="mt-0.5 shrink-0 font-mono text-[11px] text-muted-foreground/80 tabular">[{oi + 1}]</span>
+                        <span className="min-w-0 break-anywhere">
+                          <span className="text-foreground/90">{opt.label}</span>
+                          {opt.recommended && (
+                            <span className="ml-1.5 inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 align-middle text-[10px] font-medium text-primary">
+                              Рекомендуется
+                            </span>
+                          )}
+                          {opt.description && <span className="block text-xs text-muted-foreground">{opt.description}</span>}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
           ))}
           <OutputBlock item={item} chatId={chatId} />
@@ -458,7 +488,7 @@ export const ToolCard = memo(function ToolCard({
       >
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <span className="shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
-        <span className={cn('min-w-0 flex-1 truncate', item.category === 'bash' || item.category === 'search' ? 'font-mono text-[12.5px]' : 'font-mono text-[12.5px]')}>
+        <span className={cn('min-w-0 flex-1 truncate', item.category === 'question' ? 'text-[13px]' : 'font-mono text-[12.5px]')}>
           {title}
         </span>
         {item.subtitle && <span className="hidden max-w-[30%] shrink truncate text-xs text-muted-foreground md:inline">{item.subtitle}</span>}

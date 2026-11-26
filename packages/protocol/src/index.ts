@@ -168,11 +168,17 @@ export interface ApprovalOption {
   label: string;
 }
 
+export interface QuestionOption {
+  label: string;
+  description?: string;
+  recommended?: boolean;
+}
+
 export interface Question {
   question: string;
   header?: string;
   multiSelect?: boolean;
-  options: { label: string; description?: string }[];
+  options: QuestionOption[];
 }
 
 export interface Approval {
@@ -199,8 +205,10 @@ export interface ApprovalDecision {
   /** One of Approval.options (e.g. allow for session). */
   optionId?: string;
   message?: string;
-  /** AskUserQuestion: question text → chosen label(s), comma-joined. */
+  /** AskUserQuestion / ask_question: question text → chosen label(s), comma-joined. */
   answers?: Record<string, string>;
+  /** Exact list of chosen labels / custom answer per question (safe when labels contain commas). */
+  answerLists?: Record<string, string[]>;
 }
 
 export interface Usage {

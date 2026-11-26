@@ -32,7 +32,8 @@
 | `codex/rpc.ts` | клиент `codex app-server` (JSON-RPC, автоперезапуск) |
 | `codex/index.ts` | `CodexAdapter`: треды, история (`thread/turns/list`, itemsView full), события, подтверждения |
 | `antigravity/acp.ts` | клиент `agy acp` (Agent Client Protocol: JSON-RPC 2.0, NDJSON по stdio; запуск по первому запросу, автоперезапуск после падения) |
-| `antigravity/index.ts` | `AntigravityAdapter`: сессии, история (replay `session/load`), события `session/update`, подтверждения |
+| `antigravity/index.ts` | `AntigravityAdapter`: сессии, история (replay `session/load`), события `session/update`, подтверждения и вопросы `ask_question` |
+| `antigravity/questions.ts` | разбор `ask_question` (`(Recommended)`, мультивыбор), заголовок карточки и форматирование ответов для `session/prompt` |
 
 ### Claude
 
@@ -115,6 +116,17 @@
 - Подтверждения: запрос агента `session/request_permission {toolCall, options}`. `execute` → карточка команды, `edit` →
   правка с diff. Ответ — `optionId` нужного `kind` (`allow_once` / `allow_always` / `reject_once`). Комментарий к «Отклонить»
   уходит агенту следующим `session/prompt` (дополнение в тот же ход).
+- **Вопросы `ask_question`** (`antigravity/questions.ts`, `web/src/lib/questions.ts`): отдельного ACP RPC-запроса под вопросы
+  в `agy acp` нет — агент присылает `tool_call` `ask_question` (`rawInput.questions`: `question`, `options`,
+  `is_multi_select`), сразу дублирует вопросы текстом (`- [1] (Recommended) …`) и завершает ход (`end_turn`), оставляя
+  инструмент открытым. Адаптер классифицирует `ask_question` как `question`, поднимает штатный `Approval` (`kind: 'question'`)
+  и сохраняет его (вместе со статусом `waiting` и Telegram-уведомлением) поверх `end_turn` до ответа, пропуска, отмены или
+  обычного сообщения пользователя; при ответе собирает структурированный текст с индексами `[N]` и отправляет его через
+  `session/prompt`. При `session/load` незавершённый `ask_question` в хвосте истории восстанавливает форму (без статуса
+  `waiting`, чтобы старые чаты не держали `busy`), а уже отвеченные закрываются как `done`. В вебе дубль-текст от `agy acp`
+  сворачивается в раскрываемую карточку `ask_question` (`isAskQuestionEcho`), а форма `QuestionForm` (`approval-panel.tsx`)
+  для всех трёх агентов работает пошаговым степпером при нескольких вопросах, выносит `(Recommended)` в бейдж «Рекомендуется»
+  и предлагает кнопку «Рекомендуемые».
 - Модели: `availableModels` вида `gemini-4-neon-high` → модель `gemini-4-neon` + глубина `high` (у Orchestrator глубины нет,
   у GPT-OSS — только `medium`); выбор — `session/set_model` с полным id. До первой сессии в процессе список берётся из
   `agy models`. Режимы — `session/set_mode`: `default` «Спрашивать», `accept-edits` «Правки без вопросов», `plan` «План».

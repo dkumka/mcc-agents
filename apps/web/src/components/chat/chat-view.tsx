@@ -311,7 +311,7 @@ export function ChatView({ chatId }: { chatId: string }) {
           busy={busy}
           onSend={onSend}
           onStop={() => store.interrupt(chatId)}
-          placeholder={busy ? 'Добавить в очередь…' : undefined}
+          placeholder={state.approvals[0]?.kind === 'question' ? 'Или напишите свой ответ…' : busy ? 'Добавить в очередь…' : undefined}
           autoFocus
         />
         <StatusBar usage={state.usage} limits={limits} agent={s.agent} model={state.settings.model} tasks={state.tasks} />

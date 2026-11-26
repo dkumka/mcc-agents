@@ -7,6 +7,7 @@ import { canBranch } from '@/lib/format';
 import { FileBase, FileHints, Markdown, TaskPrompt } from '@/components/markdown';
 import { Button } from '@/components/ui/button';
 import { pathsNamed, touchedPaths } from '@/lib/files';
+import { extractQuestionsFromInput, isAskQuestionEcho } from '@/lib/questions';
 import { store } from '@/lib/store';
 import { useUi } from '@/lib/ui';
 import { cn } from '@/lib/utils';
@@ -23,7 +24,16 @@ function useTree(items: ChatItem[]) {
         const arr = children.get(it.parentId) ?? [];
         arr.push(it);
         children.set(it.parentId, arr);
-      } else top.push(it);
+      } else {
+        // agy acp echoes ask_question as a plain-text bullet list right after the tool call:
+        // fold that duplicate into the collapsible question ToolCard above it
+        const prev = top.at(-1);
+        if (it.kind === 'assistant' && prev?.kind === 'tool' && prev.category === 'question') {
+          const qs = extractQuestionsFromInput(prev.input);
+          if (isAskQuestionEcho(it.text, qs, it.streaming)) continue;
+        }
+        top.push(it);
+      }
     }
     return { top, children };
   }, [items]);
@@ -109,7 +119,7 @@ function foldTurns(top: ChatItem[]): Row[] {
   const flush = () => {
     let last = -1;
     turn.forEach((it, i) => {
-      if (it.kind === 'tool' || it.kind === 'thinking') last = i;
+      if ((it.kind === 'tool' && it.category !== 'question') || it.kind === 'thinking') last = i;
     });
     const steps = turn.slice(0, last + 1);
     const work = steps.filter((it) => !(it.kind === 'notice' && it.level !== 'info'));

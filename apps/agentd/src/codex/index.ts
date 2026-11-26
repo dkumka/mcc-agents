@@ -439,8 +439,12 @@ export class CodexAdapter implements Adapter {
       case 'item/tool/requestUserInput': {
         const answers: Json = {};
         for (const q of (req.params.questions ?? []) as Json[]) {
-          const a = d.answers?.[q.question];
-          if (a !== undefined) answers[q.id] = { answers: a.split(', ').filter(Boolean) };
+          const list = d.answerLists?.[q.question];
+          if (list) answers[q.id] = { answers: list.filter(Boolean) };
+          else {
+            const a = d.answers?.[q.question];
+            if (a !== undefined) answers[q.id] = { answers: a.split(', ').filter(Boolean) };
+          }
         }
         this.rpc.respond(req.rpcId, { answers });
         break;

@@ -12,6 +12,7 @@ import type {
   LimitWindow,
   ModelInfo,
   PermissionModeInfo,
+  Question,
   SendPayload,
   SlashCommand,
   ToolCategory,
@@ -25,6 +26,7 @@ import { logger } from '../log.ts';
 import { store } from '../store.ts';
 import { splitFiles } from '../uploads.ts';
 import { AcpServer } from './acp.ts';
+import { formatAskQuestionAnswers, isAskQuestionTool, parseAskQuestions, questionToolTitle } from './questions.ts';
 import { AGENT_INSTRUCTIONS } from '../task-prompt.ts';
 
 /** ACP has no system prompt; agy appends this one when it comes as `_meta.antigravity.systemPrompt.append` (new and loaded sessions). */
@@ -103,6 +105,7 @@ function textOf(c: Json | undefined): string {
 }
 
 function categoryOf(tc: Json, diffs: FileDiff[]): ToolCategory {
+  if (isAskQuestionTool(tc)) return 'question';
   switch (tc.kind) {
     case 'execute':
       return 'bash';
@@ -128,7 +131,7 @@ function categoryOf(tc: Json, diffs: FileDiff[]): ToolCategory {
 }
 
 /** Merged ACP tool call (tool_call + its tool_call_updates) → ToolItem. */
-function toolItem(tc: Json, extra: { denied?: boolean; ts?: number; durationMs?: number | null }): ToolItem {
+function toolItem(tc: Json, extra: { denied?: boolean; ts?: number; durationMs?: number | null; pendingQuestion?: boolean }): ToolItem {
   const raw: Json = tc.rawInput ?? tc.args ?? {};
   const diffs: FileDiff[] = [];
   const texts: string[] = [];
@@ -152,19 +155,24 @@ function toolItem(tc: Json, extra: { denied?: boolean; ts?: number; durationMs?:
   }
   const category = categoryOf(tc, diffs);
   const path = tc.locations?.[0]?.path as string | undefined;
+  const qs = category === 'question' ? parseAskQuestions(raw) : [];
   const title =
-    tc.kind === 'execute'
-      ? String(raw.CommandLine ?? tc.title ?? '')
-      : (category === 'edit' || category === 'write' || category === 'read') && path
-        ? path
-        : String(tc.title ?? tc.name ?? 'Инструмент');
+    category === 'question'
+      ? qs.length
+        ? questionToolTitle(qs)
+        : 'Вопрос'
+      : tc.kind === 'execute'
+        ? String(raw.CommandLine ?? tc.title ?? '')
+        : (category === 'edit' || category === 'write' || category === 'read') && path
+          ? path
+          : String(tc.title ?? tc.name ?? 'Инструмент');
   let status: ToolStatus;
   switch (tc.status) {
     case 'pending':
       status = 'pending';
       break;
     case 'in_progress':
-      status = 'running';
+      status = extra.pendingQuestion ? 'pending' : 'running';
       break;
     case 'failed':
       status = extra.denied ? 'denied' : 'error';
@@ -173,7 +181,7 @@ function toolItem(tc: Json, extra: { denied?: boolean; ts?: number; durationMs?:
       status = exitCode ? 'error' : 'done';
       break;
     default:
-      status = 'running';
+      status = extra.pendingQuestion ? 'pending' : 'running';
   }
   return {
     kind: 'tool',
@@ -221,6 +229,12 @@ interface PendingReq {
   options: { optionId: string; name: string; kind: string }[];
 }
 
+interface PendingQuestion {
+  sid: string;
+  toolCallId: string;
+  questions: Question[];
+}
+
 /**
  * Antigravity CLI (`agy`) through its official ACP server. History, titles and sessions are the CLI's own
  * (`agy --conversation <id>` in a terminal opens the same conversation).
@@ -232,6 +246,7 @@ export class AntigravityAdapter implements Adapter {
   private sessions = new Map<string, Sess>();
   private loaded = new Set<string>();
   private pending = new Map<string, PendingReq>();
+  private pendingQuestions = new Map<string, PendingQuestion>();
   private models: ModelInfo[] = [];
   private modes: PermissionModeInfo[] = STATIC_MODES.map((m) => modeInfo(m));
   /** `modes` came from a real session (else: a guess, see sandboxLikely). */
@@ -246,7 +261,7 @@ export class AntigravityAdapter implements Adapter {
     // limits at start, if none or older than an hour (no point earlier: the list refresh starts agy anyway)
     setTimeout(() => {
       if (this.usageStale()) this.refreshUsage();
-    }, 20_000);
+    }, 20_000).unref();
     this.acp.on('notification', (m: string, p: Json) => {
       try {
         if (m === 'session/update') this.onUpdate(String(p.sessionId), p.update ?? {});
@@ -272,6 +287,7 @@ export class AntigravityAdapter implements Adapter {
       }
       this.loaded.clear();
       this.pending.clear();
+      this.pendingQuestions.clear();
     });
   }
 
@@ -377,11 +393,13 @@ export class AntigravityAdapter implements Adapter {
   async load(chat: Chat) {
     const sid = chat.nativeId;
     const st = this.sess(sid);
+    for (const [id, pq] of this.pendingQuestions) if (pq.sid === sid) this.pendingQuestions.delete(id);
     st.replay = true;
     st.cur = undefined;
     st.tools.clear();
     st.toolStart.clear();
     chat.resetItems([]);
+    chat.state.approvals = [];
     let r: Json;
     try {
       r = await this.acp.request('session/load', { sessionId: sid, cwd: chat.cwd || config.home, mcpServers: [], _meta: SYSTEM_META }, 180_000);
@@ -395,10 +413,40 @@ export class AntigravityAdapter implements Adapter {
     }
     this.absorb(sid, r);
     this.loaded.add(sid);
-    // tools the history left open (the turn was cut off) are not running now
-    if (!st.inflight)
-      for (const it of chat.state.items)
-        if (it.kind === 'tool' && (it.status === 'running' || it.status === 'pending')) chat.upsert({ ...it, status: 'interrupted' }, { silent: true });
+    // tools the history left open (the turn was cut off) are not running now; an unanswered trailing ask_question
+    // restores its interactive form (without triggering Telegram or marking the server busy)
+    if (!st.inflight) {
+      let lastUserIdx = -1;
+      for (let i = chat.state.items.length - 1; i >= 0; i--) {
+        if (chat.state.items[i].kind === 'user') {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      let trailingAsk: { item: ToolItem; questions: Question[] } | null = null;
+      for (let i = lastUserIdx + 1; i < chat.state.items.length; i++) {
+        const it = chat.state.items[i];
+        if (it.kind === 'tool' && it.category === 'question') {
+          const qs = parseAskQuestions(it.input);
+          if (qs.length) trailingAsk = { item: it, questions: qs };
+        }
+      }
+      for (const it of chat.state.items) {
+        if (it.kind !== 'tool') continue;
+        if (it.category === 'question') {
+          if (trailingAsk && it.id === trailingAsk.item.id) {
+            if (it.status !== 'pending') chat.upsert({ ...it, status: 'pending' }, { silent: true });
+            const aid = `q:${it.id}`;
+            this.pendingQuestions.set(aid, { sid, toolCallId: it.id, questions: trailingAsk.questions });
+            chat.state.approvals = [this.questionApproval(aid, it.id, trailingAsk.questions)];
+          } else if (it.status === 'running' || it.status === 'pending') {
+            chat.upsert({ ...it, status: 'done' }, { silent: true });
+          }
+        } else if (it.status === 'running' || it.status === 'pending') {
+          chat.upsert({ ...it, status: 'interrupted' }, { silent: true });
+        }
+      }
+    }
     const meta = store.meta(chat.id);
     const cur = this.settingsOf(st);
     // mode not chosen here: «Авто» where agy offers it (as Claude / Codex), else what the session has
@@ -461,6 +509,36 @@ export class AntigravityAdapter implements Adapter {
       });
   }
 
+  private questionApproval(id: string, toolCallId: string, questions: Question[]): Approval {
+    return {
+      id,
+      kind: 'question',
+      tool: 'ask_question',
+      title: questions.length > 1 ? 'Antigravity задаёт вопросы' : 'Antigravity задаёт вопрос',
+      questions,
+      toolItemId: toolCallId,
+      createdAt: Date.now(),
+    };
+  }
+
+  private hasPendingQuestion(sid: string): boolean {
+    for (const pq of this.pendingQuestions.values()) if (pq.sid === sid) return true;
+    return false;
+  }
+
+  private clearPendingQuestions(chat: Chat, sid: string, toolStatus?: 'done' | 'interrupted' | 'denied', idleIfQuiet = false) {
+    for (const [id, pq] of this.pendingQuestions) {
+      if (pq.sid !== sid) continue;
+      this.pendingQuestions.delete(id);
+      chat.removeApproval(id);
+      if (toolStatus) {
+        const cur = chat.tool(pq.toolCallId);
+        if (cur && (cur.status === 'running' || cur.status === 'pending')) chat.update<ToolItem>(pq.toolCallId, { status: toolStatus });
+      }
+    }
+    if (idleIfQuiet && !this.sess(sid).inflight) chat.setStatus('idle');
+  }
+
   private finishTurn(chat: Chat, st: Sess) {
     st.inflight = 0;
     this.closeText(chat, st);
@@ -488,16 +566,31 @@ export class AntigravityAdapter implements Adapter {
     for (const [id, req] of this.pending) if (req.sid === chat.nativeId) this.pending.delete(id);
     // agy moves long commands to the background and ends the turn while they run: they stay «running» until their
     // tool_call_update arrives; only a stop or a failure ends them here
-    if (outcome !== 'done') chat.settleRunningTools('interrupted');
-    chat.clearApprovals();
-    chat.setStatus('idle');
-    chat.finished(outcome);
+    if (outcome !== 'done') {
+      this.clearPendingQuestions(chat, chat.nativeId, 'interrupted');
+      chat.settleRunningTools('interrupted');
+      chat.clearApprovals();
+      chat.setStatus('idle');
+      chat.finished(outcome);
+    } else if (this.hasPendingQuestion(chat.nativeId)) {
+      // agy acp ends the turn right after ask_question and waits for the user's next session/prompt:
+      // keep the interactive question form open (and Telegram alert active) until the user answers or skips
+      const keep = chat.state.approvals.filter((a) => this.pendingQuestions.has(a.id));
+      if (keep.length !== chat.state.approvals.length) chat.patch({ approvals: keep });
+      chat.setStatus('waiting');
+    } else {
+      chat.clearApprovals();
+      chat.setStatus('idle');
+      chat.finished(outcome);
+    }
     // what this turn cost: 5-hour / weekly limits (also after an error — it may be the limit itself)
     this.refreshUsage();
   }
 
   async send(chat: Chat, message: SendPayload) {
     if (!this.loaded.has(chat.nativeId)) await this.hubLoad(chat);
+    // typing directly in the composer answers/dismisses any pending ask_question form
+    this.clearPendingQuestions(chat, chat.nativeId, 'done');
     this.prompt(chat, this.blocks(message));
   }
 
@@ -510,7 +603,11 @@ export class AntigravityAdapter implements Adapter {
   async interrupt(chat: Chat) {
     const sid = chat.nativeId;
     const st = this.sess(sid);
-    if (!st.inflight) return;
+    if (!st.inflight) {
+      if (this.hasPendingQuestion(sid)) this.clearPendingQuestions(chat, sid, 'interrupted', true);
+      return;
+    }
+    this.clearPendingQuestions(chat, sid, 'interrupted');
     // pending permission requests must be answered «cancelled» (ACP)
     for (const [id, req] of this.pending) {
       if (req.sid !== sid) continue;
@@ -530,6 +627,26 @@ export class AntigravityAdapter implements Adapter {
   }
 
   async decide(chat: Chat, d: ApprovalDecision) {
+    const pq = this.pendingQuestions.get(d.approvalId);
+    if (pq) {
+      this.pendingQuestions.delete(d.approvalId);
+      chat.removeApproval(d.approvalId);
+      const cur = chat.tool(pq.toolCallId);
+      if (cur && (cur.status === 'running' || cur.status === 'pending')) {
+        chat.update<ToolItem>(pq.toolCallId, { status: d.decision === 'allow' ? 'done' : 'denied' });
+      }
+      if (d.decision === 'allow') {
+        const text = formatAskQuestionAnswers(pq.questions, d.answers, d.answerLists);
+        if (text) {
+          chat.upsert({ kind: 'user', id: randomUUID(), ts: Date.now(), text });
+          if (!this.loaded.has(chat.nativeId)) await this.hubLoad(chat);
+          this.prompt(chat, [{ type: 'text', text }]);
+          return;
+        }
+      }
+      if (!this.sess(pq.sid).inflight) chat.setStatus('idle');
+      return;
+    }
     const req = this.pending.get(d.approvalId);
     if (!req) throw new Error('запрос уже неактуален');
     this.pending.delete(d.approvalId);
@@ -621,9 +738,32 @@ export class AntigravityAdapter implements Adapter {
       if (!st.toolStart.has(id)) st.toolStart.set(id, Date.now());
       if (merged.status === 'completed' || merged.status === 'failed') durationMs = Date.now() - st.toolStart.get(id)!;
     }
+    const ask = isAskQuestionTool(merged);
+    const activeAsk = ask && merged.status !== 'completed' && merged.status !== 'failed';
     const prev = chat.tool(id);
-    const item = toolItem(merged, { denied: st.denied.has(id), ts: prev?.ts ?? (st.replay ? undefined : Date.now()), durationMs: durationMs ?? prev?.durationMs });
+    const item = toolItem(merged, {
+      denied: st.denied.has(id),
+      ts: prev?.ts ?? (st.replay ? undefined : Date.now()),
+      durationMs: durationMs ?? prev?.durationMs,
+      pendingQuestion: activeAsk,
+    });
     chat.upsert(item, { silent: st.replay });
+    if (ask && !st.replay) {
+      const aid = `q:${id}`;
+      if (!activeAsk) {
+        if (this.pendingQuestions.has(aid)) {
+          this.pendingQuestions.delete(aid);
+          chat.removeApproval(aid);
+          if (!st.inflight) chat.setStatus('idle');
+        }
+      } else {
+        const qs = parseAskQuestions(merged.rawInput ?? merged.args);
+        if (qs.length) {
+          this.pendingQuestions.set(aid, { sid: chat.nativeId, toolCallId: id, questions: qs });
+          if (!chat.state.approvals.some((a) => a.id === aid)) chat.addApproval(this.questionApproval(aid, id, qs));
+        }
+      }
+    }
   }
 
   private onUpdate(sid: string, u: Json) {
