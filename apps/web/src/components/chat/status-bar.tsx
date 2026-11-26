@@ -1,6 +1,6 @@
 'use client';
 
-import { ActivityIcon, AlertCircleIcon } from 'lucide-react';
+import { ActivityIcon, AlertCircleIcon, TerminalIcon } from 'lucide-react';
 import type { AgentKind, AgentLimits, BgTask, LimitWindow, Usage } from '@mcc-agents/protocol';
 import { useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -9,6 +9,8 @@ import { AGENT_NAME } from '@/components/agent-badge';
 import { resetAt, resetIn, timeAgo, tokens } from '@/lib/format';
 import { ui } from '@/lib/ui';
 import { cn } from '@/lib/utils';
+
+export const AGY_TERMINAL_URL = 'https://ssh.mcc.klemid.ru/agy';
 
 export function levelClass(p: number) {
   return p >= 95 ? 'text-destructive' : p >= 80 ? 'text-warning' : '';
@@ -135,7 +137,7 @@ export function LimitsInline({ limits, agent, model, className, plain }: { limit
       <PopoverContent
         side="top"
         align="start"
-        className="max-h-[70vh] w-72 space-y-3 overflow-y-auto p-3 text-xs"
+        className="max-h-[70vh] w-72 max-w-[calc(100vw-1rem)] space-y-3 overflow-y-auto p-3 text-xs"
         onMouseEnter={enter}
         onMouseLeave={leave}
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -180,6 +182,29 @@ export function LimitsInline({ limits, agent, model, className, plain }: { limit
             {agent === 'antigravity'
               ? `У каждой группы моделей свои лимиты. Обновляются после каждого ответа Antigravity; последние — ${ago}.`
               : `Данные приходят с ответами ${AGENT_NAME[agent]}; последние — ${ago}.`}
+          </div>
+        ) : null}
+        {agent === 'antigravity' ? (
+          <div className="space-y-1.5 border-t pt-2.5">
+            <a
+              href={AGY_TERMINAL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                'flex min-h-10 w-full items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium transition-colors',
+                !hasWindows || l.error
+                  ? 'border-warning/40 bg-warning/10 text-foreground hover:bg-warning/20'
+                  : 'border-border bg-secondary/60 text-foreground hover:bg-secondary',
+              )}
+            >
+              <TerminalIcon className="size-3.5 shrink-0" />
+              <span>
+                Открыть <code className="font-mono">agy</code> в терминале ↗
+              </span>
+            </a>
+            <div className="text-[11px] leading-relaxed text-muted-foreground">
+              В открывшемся терминале введите <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground">/usage</code>, чтобы посмотреть лимиты.
+            </div>
           </div>
         ) : null}
       </PopoverContent>

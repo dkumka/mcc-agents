@@ -544,4 +544,12 @@ Chromium 375/402/1440 для меню, переименования, pin, ста
     `<button>` внутри `<button>`.
   - Проверено: `npm run typecheck`, `npm test` (добавлены тесты `tests/limits.test.ts`), ESLint по изменённым файлам.
     Не проверено: визуальная проверка на телефоне / iOS Simulator и живая выкатка (демон не перезапускался, `busy > 0`).
+- **Быстрое открытие `agy` в браузерном терминале из карточки лимитов Antigravity**:
+  - В `LimitsInline` (`apps/web/src/components/chat/status-bar.tsx`) для Antigravity добавлена кнопка «Открыть `agy` в
+    терминале ↗» (`https://ssh.mcc.klemid.ru/agy` в новой вкладке, `min-h-10` ≥ 40 px) и короткая подсказка ввести `/usage`
+    — карточка особенно полезна в состоянии «лимиты недоступны» из-за `Eligibility check failed` у `agy -p "/usage"`.
+    Ограничена максимальная ширина поповера `max-w-[calc(100vw-1rem)]` для узких экранов.
+  - Проверено: `npm run typecheck`, `npm test`, ESLint по `status-bar.tsx`, изолированная сборка Next.js и мобильная
+    вёрстка в Playwright Chromium (375 px и 402 px: кнопка ≥ 40 px, `target="_blank"`, без горизонтального переполнения).
+    Не проверено: iOS Simulator и живое открытие после выкатки.
 
