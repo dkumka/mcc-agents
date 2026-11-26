@@ -107,13 +107,14 @@ const TEXT_MAX = 50 * 1024 * 1024;
 
 const tilde = (p: string) => p.replace(/^\/home\/[^/]+/, '~');
 
-function Problem({ title, path, children }: { title: string; path?: string; children?: React.ReactNode }) {
+function Problem({ title, path, note, children }: { title: string; path?: string; note?: string; children?: React.ReactNode }) {
   return (
     <Center>
       <TriangleAlertIcon className="size-8 text-muted-foreground" />
       <div className="max-w-full space-y-1 px-2">
         <div className="text-base font-medium">{title}</div>
         {path && <div className="break-anywhere font-mono text-xs text-muted-foreground select-all">{path}</div>}
+        {note && <div className="break-anywhere max-w-lg text-sm text-muted-foreground">{note}</div>}
       </div>
       {children}
     </Center>
@@ -138,6 +139,18 @@ function Matches({ f, matches }: { f: ViewerFile; matches: string[] }) {
   );
 }
 
+/** «Искали: папка чата ~/dev/mcc, репозитории чата mcc-agents, ещё 3 репозитория в папке чата» — why the file is not there. */
+function searchedNote(loc: Located): string | undefined {
+  const s = loc.searched;
+  if (!s) return undefined;
+  const parts: string[] = [];
+  if (s.cwd) parts.push(`папка чата ${tilde(s.cwd)}`);
+  if (s.roots.length) parts.push(`${s.roots.length === 1 ? 'репозиторий' : 'репозитории'} чата ${s.roots.slice(0, 5).map(baseName).join(', ')}${s.roots.length > 5 ? '…' : ''}`);
+  if (s.repos) parts.push(`репозиториев в папке чата: ${s.repos}`);
+  if (!parts.length) return undefined;
+  return `Искали: ${parts.join('; ')}. Другие проекты не просматриваются — если файл там, агенту нужно дать полный путь.`;
+}
+
 function LocateProblem({ f, loc }: { f: ViewerFile; loc: Located }) {
   if (loc.status === 'choose')
     return (
@@ -151,7 +164,7 @@ function LocateProblem({ f, loc }: { f: ViewerFile; loc: Located }) {
     );
   if (loc.status === 'not_found')
     return (
-      <Problem title="Файл не найден:" path={loc.path}>
+      <Problem title="Файл не найден:" path={loc.path} note={searchedNote(loc)}>
         {loc.matches.length > 0 && (
           <>
             <div className="text-sm text-muted-foreground">Файлы с таким же именем:</div>

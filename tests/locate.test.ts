@@ -36,7 +36,12 @@ test('an absolute path opens as is', () => {
 });
 
 test('a missing file reports the full path it tried', () => {
-  assert.deepEqual(locate(path.join(cwd, 'nope.md'), { cwd, bare: true }), { path: path.join(cwd, 'nope.md'), status: 'not_found', matches: [] });
+  assert.deepEqual(locate(path.join(cwd, 'nope.md'), { cwd, bare: true }), {
+    path: path.join(cwd, 'nope.md'),
+    status: 'not_found',
+    matches: [],
+    searched: { cwd, roots: [], repos: 0 },
+  });
 });
 
 test('several matches are offered to choose from', () => {
@@ -138,4 +143,14 @@ test('a bare name is tried at the root of the touched repositories', () => {
   const r = locate(at('NEST-ONLY.md'), { cwd, bare: true, touched: [at('supa-nest/libs')] });
   assert.equal(r.status, 'ok');
   assert.equal(r.path, at('supa-nest/NEST-ONLY.md'));
+});
+
+test('a missing relative path says where it was looked for', () => {
+  const r = locate(at('nowhere/x.js'), { cwd, rel: 'nowhere/x.js', touched: [at('supa-api/models')] });
+  assert.equal(r.status, 'not_found');
+  // nothing in the touched repository: the chat folder's own repositories were tried too
+  assert.deepEqual(r.searched, { cwd, roots: [at('supa-api')], repos: 3 });
+  // found in the touched repository: the others are not tried
+  put('supa-api/found/x.js');
+  assert.equal(locate(at('found/x.js'), { cwd, rel: 'found/x.js', touched: [at('supa-api')] }).status, 'ok');
 });

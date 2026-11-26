@@ -7,6 +7,8 @@ export interface Located {
   status: 'ok' | 'choose' | 'not_found' | 'forbidden' | 'eacces' | 'not_file';
   size?: number;
   matches: string[];
+  /** For 'not_found': where the server looked (see locate.ts). */
+  searched?: { cwd?: string; roots: string[]; repos: number };
 }
 
 /** What the viewer knows about a path an agent wrote (see ViewerFile). */

@@ -10,6 +10,17 @@ export interface Located {
   size?: number;
   /** Files with the same name: the choice for 'choose', suggestions for 'not_found'. */
   matches: string[];
+  /** For 'not_found': where the file was looked for, so the viewer can say why it is not there. */
+  searched?: Searched;
+}
+
+export interface Searched {
+  /** The chat folder (by name, 4 levels down). */
+  cwd?: string;
+  /** Git roots of what the chat touched, newest first. */
+  roots: string[];
+  /** Repositories inside the chat folder (`<repo>` and `worktrees/<task>/<repo>`) the relative path was tried in. */
+  repos: number;
 }
 
 const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'worktrees', '.next']);
@@ -192,15 +203,18 @@ export function locate(raw: string, o: LocateOptions = {}): Located {
   if (direct.status !== 'not_found') return { ...direct, matches: [] };
   const name = path.basename(p);
 
+  const searched: Searched = { cwd, roots, repos: 0 };
   if (o.bare) {
     const near = existing([...(o.hints ?? []).map((h) => path.resolve(h)).filter((h) => path.basename(h) === name), ...roots.map((r) => path.join(r, name))]);
     const found = near.length || !cwd ? near : findByName(cwd, name);
-    return pick(found.filter((m) => m !== p)) ?? { path: p, status: 'not_found', matches: [] };
+    return pick(found.filter((m) => m !== p)) ?? { path: p, status: 'not_found', matches: [], searched };
   }
 
   if (relOk) {
     const recent = existing(roots.flatMap((r) => under(r, rel)));
-    const hit = pick(recent.length || !cwd ? recent : existing(reposIn(cwd).flatMap((r) => under(r, rel))));
+    const repos = recent.length || !cwd ? [] : reposIn(cwd);
+    searched.repos = repos.length;
+    const hit = pick(recent.length ? recent : existing(repos.flatMap((r) => under(r, rel))));
     if (hit) return hit;
   }
   // same name elsewhere; with a relative path, the ones whose path ends the same way are the answer
@@ -217,5 +231,5 @@ export function locate(raw: string, o: LocateOptions = {}): Located {
     const hit = pick(tail);
     if (hit) return hit;
   }
-  return { path: p, status: 'not_found', matches };
+  return { path: p, status: 'not_found', matches, searched };
 }
