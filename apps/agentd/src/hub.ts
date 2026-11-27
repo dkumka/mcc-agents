@@ -26,7 +26,7 @@ import { store, type ChatMeta } from './store.ts';
 import { TelegramBridge, escapeHtml } from './telegram.ts';
 import { TgApprovals } from './tg-approvals.ts';
 import { textWithFiles } from './uploads.ts';
-import { cleanupModel, openrouterKey, voiceModel } from './voice.ts';
+import { cleanupModel, getLocalVoiceReady, openrouterKey, refreshLocalVoiceReady, voiceModel } from './voice.ts';
 import { CLEANUP_MODELS, VOICE_MODELS } from '@mcc-agents/protocol';
 
 const log = logger('hub');
@@ -82,13 +82,23 @@ export class Hub implements ChatSink {
 
   /** Start the Telegram bridge (reads ~/secrets) and tidy messages left from a previous run. */
   startTelegram() {
+    this.probeLocalVoice();
     if (!config.telegram) return;
     this.tg.reload();
     this.tga.markStale().catch(() => {});
   }
 
-  /** Called periodically: pick up a token added with secret-set without a restart. */
+  private probeLocalVoice() {
+    refreshLocalVoiceReady()
+      .then((changed) => {
+        if (changed) this.broadcast({ t: 'prefs', prefs: this.prefsState() });
+      })
+      .catch(() => {});
+  }
+
+  /** Called periodically: pick up a token added with secret-set without a restart, and refresh local voice status. */
   tick() {
+    this.probeLocalVoice();
     if (!config.telegram) return;
     const before = this.tg.ready;
     this.tg.maybeReload();
@@ -96,7 +106,14 @@ export class Hub implements ChatSink {
   }
 
   prefsState(): PrefsState {
-    return { ...store.prefs(), voiceModel: voiceModel(), voiceCleanupModel: cleanupModel(), telegramReady: this.tg.ready, voiceReady: !!openrouterKey() };
+    return {
+      ...store.prefs(),
+      voiceModel: voiceModel(),
+      voiceCleanupModel: cleanupModel(),
+      telegramReady: this.tg.ready,
+      voiceReady: !!openrouterKey(),
+      localVoiceReady: getLocalVoiceReady(),
+    };
   }
 
   register(a: Adapter) {
@@ -307,6 +324,7 @@ export class Hub implements ChatSink {
     c.send({ t: 'chats', chats: this.summaries() });
     c.send({ t: 'limits', limits: store.limits() });
     c.send({ t: 'prefs', prefs: this.prefsState() });
+    this.probeLocalVoice();
   }
 
   removeClient(c: Client) {

@@ -14,6 +14,8 @@ export const config = {
   /** Optional TCP listener (host:port) — dev only. */
   tcp: process.env.AGENTD_TCP ?? '',
   nextUrl: process.env.AGENTD_NEXT_URL ?? 'http://127.0.0.1:3110',
+  /** Local speech-to-text service (mcc-voice-local, GigaAM-v4 ONNX int8). Empty string disables it. */
+  localVoiceUrl: process.env.AGENTD_LOCAL_VOICE_URL ?? 'http://127.0.0.1:3119',
   dataDir: process.env.AGENTD_DATA ?? path.join(home, '.local/share/mcc-agents'),
   claudeBin: process.env.CLAUDE_BIN ?? 'claude',
   codexBin: process.env.CODEX_BIN ?? 'codex',

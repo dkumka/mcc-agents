@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import type http from 'node:http';
 import path from 'node:path';
-import { CLEANUP_MODELS, DEFAULT_CLEANUP_MODEL, DEFAULT_VOICE_MODEL, VOICE_MODELS, type VoiceRecord } from '@mcc-agents/protocol';
+import { CLEANUP_MODELS, DEFAULT_CLEANUP_MODEL, DEFAULT_VOICE_MODEL, VOICE_MODELS, isLocalVoiceModel, type VoiceRecord } from '@mcc-agents/protocol';
 import { config } from './config.ts';
 import { logger } from './log.ts';
 import { store } from './store.ts';
@@ -26,6 +26,28 @@ export function openrouterKey(): string | null {
   } catch {
     return null;
   }
+}
+
+let localReady = false;
+
+export function getLocalVoiceReady(): boolean {
+  return localReady;
+}
+
+/** Non-blocking health check for mcc-voice-local; returns true when readiness flipped. */
+export async function refreshLocalVoiceReady(): Promise<boolean> {
+  const prev = localReady;
+  if (!config.localVoiceUrl) {
+    localReady = false;
+  } else {
+    try {
+      const r = await fetch(`${config.localVoiceUrl}/health`, { signal: AbortSignal.timeout(1500) });
+      localReady = r.ok;
+    } catch {
+      localReady = false;
+    }
+  }
+  return localReady !== prev;
 }
 
 export function voiceModel(): string {
@@ -119,6 +141,29 @@ function deleteVoice(id: string | null, all: boolean): number {
   return n;
 }
 
+// ---------------------------------------------------------------- local ASR (mcc-voice-local)
+
+async function localSpeechToText(audio: Buffer, mediaType: string, model: string): Promise<string> {
+  if (!config.localVoiceUrl) throw new Error('Локальный сервис распознавания отключён');
+  let r: Response;
+  try {
+    r = await fetch(`${config.localVoiceUrl}/transcribe`, {
+      method: 'POST',
+      headers: { 'content-type': mediaType || 'audio/webm', 'x-voice-model': model },
+      body: new Uint8Array(audio),
+      signal: AbortSignal.timeout(90_000),
+    });
+  } catch (e) {
+    localReady = false;
+    if ((e as Error).name === 'TimeoutError') throw new Error('Локальное распознавание не ответило за 90 секунд');
+    throw new Error('Локальный сервис распознавания недоступен (служба mcc-voice-local)');
+  }
+  const body = (await r.json().catch(() => ({}))) as { text?: string; error?: string };
+  if (!r.ok) throw new Error(body.error ?? `HTTP ${r.status}`);
+  localReady = true;
+  return String(body.text ?? '').trim();
+}
+
 // ---------------------------------------------------------------- OpenRouter
 
 async function speechToText(key: string, audio: Buffer, format: string, model: string): Promise<string> {
@@ -180,36 +225,57 @@ async function tidy(key: string, raw: string, model: string, cleanup: boolean, t
 }
 
 /** Recognise (and tidy) a stored take; the record is saved whatever happens. */
-async function processRecord(rec: VoiceRecord, model = voiceModel()): Promise<VoiceRecord> {
+export async function processRecord(rec: VoiceRecord, model = voiceModel()): Promise<VoiceRecord> {
   const key = openrouterKey();
   const format = formatOf(rec.mediaType) ?? 'webm';
   const t0 = Date.now();
+  let usedModel = model;
   const out: VoiceRecord = { ...rec, model, status: 'error', raw: undefined, text: undefined, cleanupModel: undefined, translated: undefined, cleanupError: undefined, error: undefined };
   try {
-    if (!key) throw new Error('Нет ключа OpenRouter на сервере (secret-set openrouter)');
-    const raw = await speechToText(key, fs.readFileSync(rec.file), format, model);
+    const audio = fs.readFileSync(rec.file);
+    let raw: string;
+    if (isLocalVoiceModel(model)) {
+      try {
+        raw = await localSpeechToText(audio, rec.mediaType, model);
+      } catch (localErr) {
+        if (!key) throw localErr;
+        // Automatic fallback to OpenRouter when the local worker is overloaded or down and a key is configured.
+        const fallback = format === 'wav' ? 'microsoft/mai-transcribe-2' : 'openai/gpt-transcribe';
+        log.warn(`local transcribe ${rec.id} failed (${(localErr as Error).message}), falling back to ${fallback}`);
+        usedModel = fallback;
+        out.model = fallback;
+        raw = await speechToText(key, audio, format, fallback);
+      }
+    } else {
+      if (!key) throw new Error('Нет ключа OpenRouter на сервере (~/secrets/openrouter.env)');
+      raw = await speechToText(key, audio, format, model);
+    }
     if (!raw) throw new Error('Ничего не распознано');
     out.raw = raw;
     out.text = raw;
     out.status = 'ok';
     const prefs = store.prefs();
     if (prefs.voiceCleanup || prefs.voiceTranslate) {
-      const lm = cleanupModel();
-      try {
-        out.text = await tidy(key, raw, lm, prefs.voiceCleanup, prefs.voiceTranslate);
-        out.cleanupModel = lm;
-        out.translated = prefs.voiceTranslate || undefined;
-      } catch (e) {
-        out.cleanupError = `${lm}: ${(e as Error).name === 'TimeoutError' ? 'нет ответа за 30 секунд' : (e as Error).message}`;
-        log.warn(`cleanup ${rec.id}: ${out.cleanupError}`);
+      if (key) {
+        const lm = cleanupModel();
+        try {
+          out.text = await tidy(key, raw, lm, prefs.voiceCleanup, prefs.voiceTranslate);
+          out.cleanupModel = lm;
+          out.translated = prefs.voiceTranslate || undefined;
+        } catch (e) {
+          out.cleanupError = `${lm}: ${(e as Error).name === 'TimeoutError' ? 'нет ответа за 30 секунд' : (e as Error).message}`;
+          log.warn(`cleanup ${rec.id}: ${out.cleanupError}`);
+        }
+      } else if (prefs.voiceTranslate) {
+        out.cleanupError = 'Для перевода на английский нужен ключ OpenRouter';
       }
     }
   } catch (e) {
-    out.error = (e as Error).name === 'TimeoutError' ? 'OpenRouter не ответил за 90 секунд' : `${model}: ${(e as Error).message}`;
+    out.error = (e as Error).name === 'TimeoutError' ? `${usedModel}: нет ответа за 90 секунд` : `${usedModel}: ${(e as Error).message}`;
     log.warn(`transcribe ${rec.id} ${format} ${rec.size} B: ${out.error}`);
   }
   out.ms = Date.now() - t0;
-  if (out.status === 'ok') log.info(`transcribe ${rec.id} ${model} ${format} ${rec.size} B → ${out.text?.length} chars${out.cleanupModel ? ` (${out.cleanupModel}${out.translated ? ', en' : ''})` : ''}, ${out.ms} ms`);
+  if (out.status === 'ok') log.info(`transcribe ${rec.id} ${usedModel} ${format} ${rec.size} B → ${out.text?.length} chars${out.cleanupModel ? ` (${out.cleanupModel}${out.translated ? ', en' : ''})` : ''}, ${out.ms} ms`);
   saveMeta(out);
   return out;
 }

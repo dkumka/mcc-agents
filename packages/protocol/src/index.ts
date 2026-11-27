@@ -339,19 +339,23 @@ export interface Prefs {
 export interface PrefsState extends Prefs {
   /** The agents' Telegram bot is configured (~/secrets/agents-telegram.env). */
   telegramReady: boolean;
-  /** OpenRouter key is present (~/secrets/openrouter.env) — voice input works. */
+  /** OpenRouter key is present (~/secrets/openrouter.env) — cloud voice models & cleanup work. */
   voiceReady: boolean;
+  /** Local GigaAM-v4 speech-to-text service (mcc-voice-local) responds to /health. */
+  localVoiceReady?: boolean;
 }
 
-/** Speech-to-text models for voice input (OpenRouter /audio/transcriptions). Prices — OpenRouter, Nov 2026. */
+/** Speech-to-text models for voice input: local on-server GigaAM-v4 + OpenRouter /audio/transcriptions (Nov 2026). */
 /** `wav`: the provider rejects WebM/MP4 from MediaRecorder — the browser re-encodes the take to 16 kHz mono WAV (checked 2026-11-13). */
-export const VOICE_MODELS: { id: string; label: string; description: string; wav?: boolean }[] = [
+export const VOICE_MODELS: { id: string; label: string; description: string; wav?: boolean; local?: boolean }[] = [
+  { id: 'local/gigaam-v4', label: 'GigaAM-v4 (локально)', description: 'На сервере · бесплатно · 0,3–4 с, ru + en', local: true },
   { id: 'microsoft/mai-transcribe-2', label: 'Microsoft MAI-Transcribe 2', description: 'Смешанная речь (ru + en) · ≈ $0,10 / час', wav: true },
   { id: 'openai/gpt-transcribe', label: 'OpenAI GPT Transcribe', description: 'Точный, быстрый · ≈ $0,27 / час' },
   { id: 'elevenlabs/scribe-v2', label: 'ElevenLabs Scribe v2', description: 'Сильный русский · ≈ $0,22 / час' },
   { id: 'openai/whisper-large-v3', label: 'OpenAI Whisper Large v3', description: 'Дешёвый · ≈ $0,03 / час' },
 ];
 export const DEFAULT_VOICE_MODEL = VOICE_MODELS[0].id;
+export const isLocalVoiceModel = (id: string) => !!VOICE_MODELS.find((m) => m.id === id)?.local;
 
 /** LLMs for tidying / translating a dictation (OpenRouter chat). Checked 2026-11-13 on mixed ru/en dictation. */
 export const CLEANUP_MODELS: { id: string; label: string; description: string }[] = [

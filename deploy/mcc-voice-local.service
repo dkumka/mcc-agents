@@ -1,0 +1,30 @@
+[Unit]
+Description=MCC local speech-to-text (GigaAM-v4 ONNX int8)
+After=network.target
+
+[Service]
+Type=simple
+User=klemid
+Group=klemid
+WorkingDirectory=/home/klemid/.local/share/mcc-voice-local
+Environment=HOME=/home/klemid
+Environment=MCC_VOICE_DIR=/home/klemid/.local/share/mcc-voice-local
+Environment=MCC_VOICE_HOST=127.0.0.1
+Environment=MCC_VOICE_PORT=3119
+Environment=MCC_VOICE_THREADS=4
+Environment=MCC_VOICE_IDLE_SEC=1800
+Environment=MCC_VOICE_MIN_MEM_MB=1400
+Environment=MCC_VOICE_MAX_LOAD1=6.5
+Environment=HF_HUB_OFFLINE=1
+ExecStart=/home/klemid/.local/share/mcc-voice-local/venv/bin/python /home/klemid/dev/mcc/mcc-agents/services/voice-local/server.py
+Restart=on-failure
+RestartSec=3
+Nice=10
+CPUQuota=350%
+MemoryHigh=1200M
+MemoryMax=1600M
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

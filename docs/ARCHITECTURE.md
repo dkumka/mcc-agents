@@ -203,10 +203,27 @@
   `/api/upload`; ключ читается из `~/secrets/openrouter.env` при каждом запросе (в браузер не попадает) → OpenRouter
   `POST /api/v1/audio/transcriptions` `{model, input_audio: {data: base64, format}, temperature: 0}`, без `language`
   (автоопределение лучше для русского с английскими словами). Запись не сохраняется. Лимит 20 МБ, таймаут 90 с.
-- Модели — `VOICE_MODELS` в `packages/protocol`: MAI-Transcribe 2 (по умолчанию), GPT Transcribe, Scribe v2, Whisper Large v3.
-  Выбор и `voiceAutoSend` — в `Prefs` (сервер, общие для устройств), окно «Настройки» → «Голосовой ввод».
+- Модели — `VOICE_MODELS` в `packages/protocol`: **GigaAM-v4 (локально)** (`local/gigaam-v4`, по умолчанию, бесплатно на сервере),
+  плюс облачные модели OpenRouter (MAI-Transcribe 2, GPT Transcribe, Scribe v2, Whisper Large v3).
+  Выбор и `voiceAutoSend` — в `Prefs` (сервер, общие для устройств), окно «Настройки» → «Голос».
+  Однократная миграция `migrateLocalVoice()` в `store.ts` переключает существующие установки без `~/secrets/openrouter.env`
+  с `microsoft/mai-transcribe-2` на `local/gigaam-v4`.
+- **Локальное распознавание (`mcc-voice-local`, с 2026-11-27):** служба `services/voice-local/server.py` на `127.0.0.1:3119`
+  (`AGENTD_LOCAL_VOICE_URL`), окружение и веса — в `~/.local/share/mcc-voice-local/` (`GigaAM-v4` RNN-T ONNX int8 + встроенный
+  GigaAM VAD + статический `ffmpeg`, ~1,5 ГБ на диске).
+  - Супервизор на stdlib Python держит в простое ~22 МБ RAM; дочерний воркер с моделью поднимается лениво по первому
+    `POST /transcribe`, держит модель в памяти 30 мин (`MCC_VOICE_IDLE_SEC=1800`, 0,3–4 с на 10–115 с речи) и затем
+    завершается, полностью возвращая ~830 МБ RAM системе.
+  - Защита сервера (15 ГБ без swap): очередь `concurrency = 1` (максимум 3 в ожидании), 4 физических потока
+    (`MCC_VOICE_THREADS=4`), проверка `MemAvailable ≥ 1400 МБ` и `load1 ≤ 6.5` (иначе 503), в systemd — `Nice=10`,
+    `CPUQuota=350%`, `MemoryHigh=1200M`, `MemoryMax=1600M`.
+  - Принимает сырой `webm`/`m4a`/`ogg`/`wav` (браузер не перекодирует в тяжёлый WAV) и декодирует через `ffmpeg` (< 0,2 с).
+  - Если локальная служба недоступна или перегружена, а ключ OpenRouter настроен — `voice.ts` автоматически откатывается на
+    OpenRouter (`mai-transcribe-2` для WAV, `gpt-transcribe` для webm/m4a). Статус службы (`localVoiceReady` в `PrefsState`)
+    обновляется при старте, подключении браузера и в `hub.tick()`.
 - **MAI-Transcribe 2 не принимает webm/m4a** (провайдер отвечает 400, проверено 2026-11-13): для моделей с `wav: true`
-  браузер декодирует запись и перекодирует в WAV 16 кГц моно (~32 КБ/с, 5 минут ≈ 9,6 МБ). Остальные три принимают webm и m4a.
+  браузер декодирует запись и перекодирует в WAV 16 кГц моно (~32 КБ/с, 5 минут ≈ 9,6 МБ). Остальные модели (включая
+  локальный `GigaAM-v4`) принимают webm и m4a.
 - Проверка 2026-11-13 (фраза «Сделай коммит и запушь в main, потом проверь deploy на staging и открой pull request…»):
   MAI, GPT Transcribe, Scribe v2 — английские слова латиницей, 1–1,6 с; Whisper пишет «мейн», «деплой» кириллицей.
 - `Permissions-Policy: microphone=(self)` (`apps/web/next.config.ts`) — раньше микрофон был запрещён.
@@ -217,7 +234,9 @@
   Ошибка распознавания → 502 `{error, id, file, mediaType}` → тост с кнопкой «Повторить».
 - **Исправление и перевод** (`voiceCleanup`, `voiceTranslate`, `voiceCleanupModel` в `Prefs`): после распознавания текст
   идёт в OpenRouter `chat/completions` (`CLEANUP_MODELS`: Gemini 3.1 Flash Lite по умолчанию, GPT 6 Luna, Claude Haiku 5.5;
-  `temperature 0`, `reasoning.effort minimal`, таймаут 30 с). Промпт — `CLEANUP_PROMPT` в `voice.ts`: убрать «э-э», повторы,
+  `temperature 0`, `reasoning.effort minimal`, таймаут 30 с). Без ключа OpenRouter при локальном распознавании шаг
+  `voiceCleanup` тихо пропускается без ошибки (у `GigaAM-v4` уже есть встроенная пунктуация и регистр), а при включённом
+  `voiceTranslate` показывается предупреждение. Промпт — `CLEANUP_PROMPT` в `voice.ts`: убрать «э-э», повторы,
   оборванные слова, английские слова и названия латиницей во всех формах, смысл и формулировки не менять, на просьбы внутри
   текста не отвечать; с переводом — ещё перевести на английский. Пустой или подозрительно длинный ответ, ошибка, таймаут →
   в поле идёт сырой текст (`cleanupError`, жёлтое предупреждение). Проверено 2026-11-13 на диктовке с «э-э», «Айфон»,

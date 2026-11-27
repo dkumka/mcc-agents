@@ -42,6 +42,7 @@ interface StoreData {
   /** Approval messages sent to Telegram: short key → where it points and what was sent. */
   tgMessages: Record<string, TgMessage>;
   autoModeMigrated?: boolean;
+  localVoiceMigrated?: boolean;
 }
 
 export interface TgMessage {
@@ -53,7 +54,7 @@ export interface TgMessage {
 }
 
 const file = path.join(config.dataDir, 'state.json');
-const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60, voiceModel: 'microsoft/mai-transcribe-2', voiceAutoSend: false, voiceCleanup: true, voiceCleanupModel: 'google/gemini-3.1-flash-lite', voiceTranslate: false };
+const DEFAULT_PREFS: Prefs = { telegramDelaySec: 60, voiceModel: 'local/gigaam-v4', voiceAutoSend: false, voiceCleanup: true, voiceCleanupModel: 'google/gemini-3.1-flash-lite', voiceTranslate: false };
 let data: StoreData = { version: 1, meta: {}, projects: {}, limits: {}, windows: {}, lastSettings: {}, prefs: { ...DEFAULT_PREFS }, tgOffset: 0, tgMessages: {} };
 let timer: NodeJS.Timeout | null = null;
 
@@ -63,9 +64,25 @@ export function loadStore() {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     data = { ...data, ...raw, prefs: { ...DEFAULT_PREFS, ...(raw.prefs ?? {}) } };
     migrateAutoMode();
+    migrateLocalVoice();
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('cannot read state', e);
   }
+}
+
+/**
+ * 2026-11-27: local GigaAM-v4 became the default when OpenRouter is not configured.
+ * Existing installs still pointing at MAI-Transcribe 2 without ~/secrets/openrouter.env switch once.
+ */
+function migrateLocalVoice() {
+  if (data.localVoiceMigrated) return;
+  const hasOr = fs.existsSync(path.join(config.home, 'secrets/openrouter.env'));
+  if (!hasOr && data.prefs.voiceModel === 'microsoft/mai-transcribe-2') {
+    data.prefs.voiceModel = 'local/gigaam-v4';
+    log.info('local voice by default: switched voiceModel to local/gigaam-v4 (no openrouter.env)');
+  }
+  data.localVoiceMigrated = true;
+  save();
 }
 
 /**

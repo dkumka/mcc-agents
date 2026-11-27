@@ -72,6 +72,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   useEffect(() => {
     if (open && tab === 'files') api.uploads().then(setUploads).catch(() => setUploads(null));
   }, [open, tab]);
+  const voiceModelId = prefs?.voiceModel ?? DEFAULT_VOICE_MODEL;
+  const selectedVoiceModel = VOICE_MODELS.find((m) => m.id === voiceModelId);
   const options = DELAYS.some((d) => d.v === delay) ? DELAYS : [...DELAYS, { v: delay, label: `через ${delay} с` }];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -107,14 +109,25 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <section className="space-y-2">
               <h3 className="text-sm font-medium">Распознавание речи</h3>
               <p className="text-sm text-muted-foreground">
-                Кнопка 🎤 в поле ввода: говорите, нажмите ещё раз — запись распознаётся через OpenRouter (серверный ключ). Русский с английскими словами
-                понимают все четыре модели.
+                Кнопка 🎤 в поле ввода: говорите, нажмите ещё раз — запись распознаётся локально на сервере (бесплатно) или через OpenRouter.
               </p>
-              <ModelSelect value={prefs?.voiceModel ?? DEFAULT_VOICE_MODEL} models={VOICE_MODELS} onChange={(v) => store.setPrefs({ voiceModel: v })} />
-              {prefs && !prefs.voiceReady && (
-                <div className="flex items-center gap-2 text-xs text-warning">
-                  <CircleAlertIcon className="size-3.5" /> Нет ключа OpenRouter на сервере: <code>secret-set openrouter</code>
-                </div>
+              <ModelSelect value={voiceModelId} models={VOICE_MODELS} onChange={(v) => store.setPrefs({ voiceModel: v })} />
+              {selectedVoiceModel?.local ? (
+                prefs?.localVoiceReady ? (
+                  <div className="flex items-center gap-2 text-xs text-success">
+                    <CheckCircle2Icon className="size-3.5 shrink-0" /> Локальный сервис GigaAM-v4 работает (бесплатно)
+                  </div>
+                ) : prefs && prefs.localVoiceReady === false ? (
+                  <div className="flex items-center gap-2 text-xs text-warning">
+                    <CircleAlertIcon className="size-3.5 shrink-0" /> Локальный сервис не отвечает (служба <code>mcc-voice-local</code>)
+                  </div>
+                ) : null
+              ) : (
+                prefs && !prefs.voiceReady && (
+                  <div className="flex items-center gap-2 text-xs text-warning">
+                    <CircleAlertIcon className="size-3.5 shrink-0" /> Нет ключа OpenRouter на сервере: <code>~/secrets/openrouter.env</code>
+                  </div>
+                )
               )}
             </section>
 
@@ -136,6 +149,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 <>
                   <div className="pt-1 text-xs text-muted-foreground">Модель для исправления и перевода</div>
                   <ModelSelect value={prefs?.voiceCleanupModel ?? DEFAULT_CLEANUP_MODEL} models={CLEANUP_MODELS} onChange={(v) => store.setPrefs({ voiceCleanupModel: v })} />
+                  {prefs && !prefs.voiceReady && (
+                    <p className="text-xs text-muted-foreground">
+                      Исправление и перевод работают через OpenRouter — пока ключа нет, текст от локальной модели вставляется напрямую.
+                    </p>
+                  )}
                 </>
               ) : null}
             </section>
