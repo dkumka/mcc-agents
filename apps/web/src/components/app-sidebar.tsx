@@ -28,16 +28,44 @@ import { modeOf, store, useStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
-function ChatRow({ c, active, onPick }: { c: ChatSummary; active: boolean; onPick: () => void }) {
+function ChatRow({
+  c,
+  active,
+  onPick,
+  showPin = true,
+  title,
+}: {
+  c: ChatSummary;
+  active: boolean;
+  onPick: () => void;
+  showPin?: boolean;
+  title?: string;
+}) {
+  const pinnedMark = showPin && c.pinned && !c.archived && !c.projectArchived;
   return (
     <SidebarMenuItem className="flex items-center gap-1">
-      <SidebarMenuButton isActive={active} onClick={onPick} className="h-auto min-h-10 min-w-0 flex-1 gap-2 py-2" title={c.title}>
+      <SidebarMenuButton isActive={active} onClick={onPick} className="h-auto min-h-10 min-w-0 flex-1 gap-2 py-2" title={title ?? c.title}>
         <AgentMark agent={c.agent} className="opacity-90" />
         <span className={cn('min-w-0 flex-1 truncate', c.unread && 'font-semibold')}>{c.title}</span>
-        {c.forkOf && <GitBranchIcon className="size-3 shrink-0 text-muted-foreground" aria-label="ветка" />}
-        {c.taskStage && <span title={c.taskStage === 'done' ? 'Готово' : 'В работе'} aria-label={c.taskStage === 'done' ? 'Готово' : 'В работе'} className="inline-flex shrink-0 items-center text-emerald-600">{c.taskStage === 'done' ? <CheckIcon className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}</span>}
-        {c.handoffFrom && <ArrowRightLeftIcon className="size-3 shrink-0 text-muted-foreground" aria-label="продолжение из другого агента" />}
-        <StatusDot status={c.status} unread={c.unread} />
+        <span className="inline-flex shrink-0 items-center gap-1.5 empty:hidden">
+          {pinnedMark && (
+            <span title="Закреплён" aria-label="Закреплён" className="inline-flex shrink-0 items-center text-amber-600 dark:text-amber-400">
+              <PinIcon className="size-3! fill-amber-500/20 dark:fill-amber-400/20" />
+            </span>
+          )}
+          {c.forkOf && <GitBranchIcon className="size-3! shrink-0 text-muted-foreground" aria-label="ветка" />}
+          {c.taskStage && (
+            <span
+              title={c.taskStage === 'done' ? 'Готово' : 'В работе'}
+              aria-label={c.taskStage === 'done' ? 'Готово' : 'В работе'}
+              className="inline-flex shrink-0 items-center text-emerald-600"
+            >
+              {c.taskStage === 'done' ? <CheckIcon className="size-3.5!" /> : <span className="size-1.5 rounded-full bg-current" />}
+            </span>
+          )}
+          {c.handoffFrom && <ArrowRightLeftIcon className="size-3! shrink-0 text-muted-foreground" aria-label="продолжение из другого агента" />}
+          <StatusDot status={c.status} unread={c.unread} />
+        </span>
         <span className="shrink-0 text-[11px] text-muted-foreground tabular">{timeAgo(c.updatedAt)}</span>
       </SidebarMenuButton>
       <ChatActions chat={c} />
@@ -110,9 +138,11 @@ export function AppSidebar() {
   const [archive, setArchive] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [settings, setSettings] = useState(false);
   const [newProject, setNewProject] = useState(false);
   const activeId = route.kind === 'chat' ? route.chatId : null;
+  const isPinnedCollapsed = pinnedCollapsed && !q;
 
   const { pinned, groups, dated } = useMemo(() => {
     const list = Object.values(chats)
@@ -182,18 +212,53 @@ export function AppSidebar() {
       <SidebarContent className="scrollbar-thin">
         <Button variant={archive ? 'secondary' : 'ghost'} className="mx-2 min-h-10 justify-start" onClick={() => setArchive(!archive)}><ArchiveIcon className="size-4" />{archive ? 'Архив · показать текущие' : 'Архив'}</Button>
         {pinned.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>
-              <PinIcon className="mr-1 size-3" /> Закреплённые
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {pinned.map((c) => (
-                  <ChatRow key={c.id} c={c} active={c.id === activeId} onPick={() => pick(c.id)} />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <div className="px-2">
+            <section
+              aria-label="Закреплённые"
+              className="rounded-xl border border-amber-500/25 bg-card p-1 shadow-[0_1px_2px_0_rgb(0_0_0/0.03)] dark:border-amber-400/20"
+            >
+              <button
+                type="button"
+                onClick={() => setPinnedCollapsed((v) => !v)}
+                aria-expanded={!isPinnedCollapsed}
+                className="flex min-h-10 w-full items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground md:min-h-8"
+              >
+                <PinIcon className="size-3.5 shrink-0 fill-amber-500/20 text-amber-600 dark:fill-amber-400/20 dark:text-amber-400" />
+                <span className="truncate">Закреплённые</span>
+                <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-amber-700 tabular dark:bg-amber-400/15 dark:text-amber-300">
+                  {pinned.length}
+                </span>
+                <ChevronRightIcon
+                  className={cn(
+                    'ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform',
+                    !isPinnedCollapsed && 'rotate-90',
+                  )}
+                />
+              </button>
+              {!isPinnedCollapsed && (
+                <SidebarMenu className="mt-1">
+                  {pinned.map((c) => (
+                    <ChatRow
+                      key={c.id}
+                      c={c}
+                      active={c.id === activeId}
+                      onPick={() => pick(c.id)}
+                      showPin={false}
+                      title={mode === 'code' ? `${c.title} · ${projectLabel(c.cwd) || c.cwd}` : c.title}
+                    />
+                  ))}
+                </SidebarMenu>
+              )}
+            </section>
+          </div>
+        )}
+        {pinned.length > 0 && (groups.length > 0 || dated.length > 0) && (
+          <div className="mx-3 flex items-center gap-2 pt-1" role="separator">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/75">
+              {mode === 'chat' ? 'Беседы' : 'Проекты'}
+            </span>
+            <span className="h-px flex-1 bg-sidebar-border" />
+          </div>
         )}
         {dated.map(([label, list]) => (
           <SidebarGroup key={label} className="py-1">
